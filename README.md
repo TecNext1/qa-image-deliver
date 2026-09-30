@@ -3,15 +3,13 @@
 Designer page: connect this repo to Netlify and set one environment variable, `GITHUB_TOKEN`. Use a token that can write to this repo only, from an account that can push straight to `main`. Designers open the Netlify URL, drop images, and copy links. They never see the token.
 
 ```
-https://cdn.jsdelivr.net/gh/TecNext1/qa-image-deliver@main/Creta_Grand_1.png
+https://image-deliver.netlify.app/Creta_Grand_1.png
 ```
 
-Public image host on GitHub, served by [jsDelivr](https://www.jsdelivr.com/).
-
-A file committed to `main` is available at a URL that keeps the exact filename:
+Public image host. The link keeps the exact filename and does not include the GitHub account or repo. Netlify loads the file from jsDelivr behind that address.
 
 ```
-https://cdn.jsdelivr.net/gh/TecNext1/qa-image-deliver@main/Creta_Grand_1.png
+https://image-deliver.netlify.app/Creta_Grand_1.png
 ```
 
 GitHub public hosting and jsDelivr are free. The link keeps working while this repository stays public and the file stays on `main`.

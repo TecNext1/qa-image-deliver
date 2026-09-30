@@ -4,3 +4,112 @@
 
 [build.environment]
   NODE_VERSION = "20"
+
+# Image links stay on this domain. Netlify fetches the file from jsDelivr.
+[[redirects]]
+  from = "/*.png"
+  to = "https://cdn.jsdelivr.net/gh/TecNext1/qa-image-deliver@main/:splat.png"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*.jpg"
+  to = "https://cdn.jsdelivr.net/gh/TecNext1/qa-image-deliver@main/:splat.jpg"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*.jpeg"
+  to = "https://cdn.jsdelivr.net/gh/TecNext1/qa-image-deliver@main/:splat.jpeg"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*.gif"
+  to = "https://cdn.jsdelivr.net/gh/TecNext1/qa-image-deliver@main/:splat.gif"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*.webp"
+  to = "https://cdn.jsdelivr.net/gh/TecNext1/qa-image-deliver@main/:splat.webp"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*.avif"
+  to = "https://cdn.jsdelivr.net/gh/TecNext1/qa-image-deliver@main/:splat.avif"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*.svg"
+  to = "https://cdn.jsdelivr.net/gh/TecNext1/qa-image-deliver@main/:splat.svg"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*.ico"
+  to = "https://cdn.jsdelivr.net/gh/TecNext1/qa-image-deliver@main/:splat.ico"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*.bmp"
+  to = "https://cdn.jsdelivr.net/gh/TecNext1/qa-image-deliver@main/:splat.bmp"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*.tif"
+  to = "https://cdn.jsdelivr.net/gh/TecNext1/qa-image-deliver@main/:splat.tif"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*.tiff"
+  to = "https://cdn.jsdelivr.net/gh/TecNext1/qa-image-deliver@main/:splat.tiff"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*.heic"
+  to = "https://cdn.jsdelivr.net/gh/TecNext1/qa-image-deliver@main/:splat.heic"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*.heif"
+  to = "https://cdn.jsdelivr.net/gh/TecNext1/qa-image-deliver@main/:splat.heif"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*.PNG"
+  to = "https://cdn.jsdelivr.net/gh/TecNext1/qa-image-deliver@main/:splat.PNG"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*.JPG"
+  to = "https://cdn.jsdelivr.net/gh/TecNext1/qa-image-deliver@main/:splat.JPG"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*.JPEG"
+  to = "https://cdn.jsdelivr.net/gh/TecNext1/qa-image-deliver@main/:splat.JPEG"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*.GIF"
+  to = "https://cdn.jsdelivr.net/gh/TecNext1/qa-image-deliver@main/:splat.GIF"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*.WEBP"
+  to = "https://cdn.jsdelivr.net/gh/TecNext1/qa-image-deliver@main/:splat.WEBP"
+  status = 200
+  force = true

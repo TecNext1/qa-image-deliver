@@ -31,7 +31,7 @@ function extOf(name) {
 }
 
 function cdnUrl(name) {
-  return `https://cdn.jsdelivr.net/gh/${CFG.owner}/${CFG.repo}@${CFG.branch}/${encodeURIComponent(name)}`;
+  return `https://image-deliver.netlify.app/${encodeURIComponent(name)}`;
 }
 
 function previewUrl(name, sha) {

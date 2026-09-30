@@ -16,7 +16,7 @@ Usage: ./upload [--dry-run] image [image...]
 Copies each image to the repo root, keeping the exact filename, commits,
 pushes main, and prints:
 
-  https://cdn.jsdelivr.net/gh/TecNext1/qa-image-deliver@main/<filename>
+  https://image-deliver.netlify.app/<filename>
 
 --dry-run   print the URL only; do not copy, commit, or push
 EOF
@@ -131,7 +131,7 @@ for src in "${files[@]}"; do
   [[ "$size" -le "$MAX_BYTES" ]] || fail "$base is ${size} bytes. jsDelivr serves GitHub files up to 20 MB."
 
   encoded="$(encode_filename "$base")"
-  main_url="https://cdn.jsdelivr.net/gh/${SLUG}@${BRANCH}/${encoded}"
+  main_url="https://image-deliver.netlify.app/${encoded}"
   dest="$ROOT/$base"
 
   if [[ -e "$dest" ]] && cmp -s "$src" "$dest"; then
@@ -182,10 +182,8 @@ if ! git push -u origin "$BRANCH"; then
   fail "Push failed. The commit is on local $BRANCH. If GitHub asked for a pull request, main is protected and ./upload needs an account that can push directly."
 fi
 
-sha="$(git rev-parse HEAD)"
 printf '\n'
 for base in "${changed[@]}"; do
   encoded="$(encode_filename "$base")"
-  printf '%s\nhttps://cdn.jsdelivr.net/gh/%s@%s/%s\nPinned: https://cdn.jsdelivr.net/gh/%s@%s/%s\n\n' \
-    "$base" "$SLUG" "$BRANCH" "$encoded" "$SLUG" "$sha" "$encoded"
+  printf '%s\nhttps://image-deliver.netlify.app/%s\n\n' "$base" "$encoded"
 done
