@@ -31,7 +31,7 @@ is_allowed_image() {
   local ext
   ext="$(printf '%s' "${1##*.}" | tr '[:upper:]' '[:lower:]')"
   case "$ext" in
-    png|jpg|jpeg|gif|webp|avif|svg|ico|bmp|tif|tiff|heic|heif) return 0 ;;
+    png|jpg|jpeg|gif|webp|avif|svg|ico|bmp|tif|tiff|heic|heif|pdf) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -125,7 +125,7 @@ for src in "${files[@]}"; do
       fail "$base is part of this tool. Rename the image before uploading."
       ;;
   esac
-  is_allowed_image "$base" || fail "$base is not an image this CDN host accepts (png, jpg, jpeg, gif, webp, avif, svg, ico, bmp, tif, tiff, heic, heif)."
+  is_allowed_image "$base" || fail "$base is not a file type this host accepts (png, jpg, jpeg, gif, webp, avif, svg, ico, bmp, tif, tiff, heic, heif, pdf)."
 
   size="$(stat -f%z "$src" 2>/dev/null || stat -c%s "$src")"
   [[ "$size" -le "$MAX_BYTES" ]] || fail "$base is ${size} bytes. jsDelivr serves GitHub files up to 20 MB."

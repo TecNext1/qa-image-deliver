@@ -11,3 +11,4 @@
 *.tiff binary
 *.heic binary
 *.heif binary
+*.pdf binary

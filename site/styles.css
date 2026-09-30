@@ -148,6 +148,28 @@ main {
   background: #fff;
 }
 
+.file-tile {
+  display: grid;
+  place-items: center;
+  background: #efe6d8;
+  color: #8d3d28;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.queue .file-tile {
+  width: 54px;
+  height: 54px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.card .file-tile {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  font-size: 22px;
+}
+
 .queue img, .thumb-fallback {
   width: 54px;
   height: 54px;

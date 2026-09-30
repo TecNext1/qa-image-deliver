@@ -4,7 +4,7 @@ const CFG = Object.assign(
 );
 
 const MAX_BYTES = 20 * 1024 * 1024;
-const ALLOWED = ["png", "jpg", "jpeg", "gif", "webp", "avif", "svg", "ico", "bmp", "tif", "tiff", "heic", "heif"];
+const ALLOWED = ["png", "jpg", "jpeg", "gif", "webp", "avif", "svg", "ico", "bmp", "tif", "tiff", "heic", "heif", "pdf"];
 const BLOCKED = new Set(["readme.md", "upload", ".gitignore", ".gitattributes", "netlify.toml"]);
 
 const fileInput = document.querySelector("#file-input");
@@ -47,7 +47,7 @@ function targetName(original, typed) {
   }
   const withExt = name.includes(".") ? name : `${name}${original.includes(".") ? original.slice(original.lastIndexOf(".")) : ""}`;
   if (!ALLOWED.includes(extOf(withExt)) || BLOCKED.has(withExt.toLowerCase())) {
-    throw new Error(`${withExt} needs an image extension such as .png or .jpg.`);
+    throw new Error(`${withExt} needs a file extension such as .png, .jpg, or .pdf.`);
   }
   return withExt;
 }
@@ -102,14 +102,14 @@ async function loadLibrary() {
 function renderLibrary() {
   const query = search.value.trim().toLowerCase();
   const shown = library.filter((file) => file.name.toLowerCase().includes(query));
-  countEl.textContent = `${library.length} image${library.length === 1 ? "" : "s"}`;
+  countEl.textContent = `${library.length} file${library.length === 1 ? "" : "s"}`;
   if (!shown.length) {
-    grid.innerHTML = `<p class="empty">${library.length ? "No filenames match." : "No images yet. Add one on the left."}</p>`;
+    grid.innerHTML = `<p class="empty">${library.length ? "No filenames match." : "No files yet. Add one on the left."}</p>`;
     return;
   }
   grid.innerHTML = shown.map((file) => `
     <article class="card" data-name="${escapeAttr(file.name)}">
-      <img alt="" src="${escapeAttr(previewUrl(file.name, file.sha))}">
+      ${fileThumb(file.name, previewUrl(file.name, file.sha))}
       <div class="card-body">
         <h3>${escapeHtml(file.name)}</h3>
         <p class="url-preview">${escapeHtml(cdnUrl(file.name))}</p>
@@ -140,7 +140,7 @@ function renderQueue() {
     const url = nameError ? "" : cdnUrl(name);
     return `
       <li>
-        <img alt="" src="${item.preview}">
+        ${item.preview ? `<img alt="" src="${item.preview}">` : `<div class="file-tile">PDF</div>`}
         <div>
           <div class="row-actions">
             <label for="name-${item.id}">Filename</label>
@@ -149,7 +149,7 @@ function renderQueue() {
           <input id="name-${item.id}" data-id="${item.id}" type="text" value="${escapeAttr(item.typed)}" placeholder="${escapeAttr(item.original)}">
           <p class="file-meta">${escapeHtml(item.original)} · ${formatSize(item.size)}</p>
           ${nameError ? `<p class="warn">${escapeHtml(nameError)}</p>` : `<p class="url-preview">${escapeHtml(url)}</p>`}
-          ${exists ? `<p class="warn">This filename is already in the library. The public link can show the old image for up to 12 hours.</p>` : ""}
+          ${exists ? `<p class="warn">This filename is already in the library. The public link can show the old file for up to 12 hours.</p>` : ""}
         </div>
       </li>
     `;
@@ -159,7 +159,12 @@ function renderQueue() {
     catch { return false; }
   });
   publishBtn.disabled = publishing || !CFG.token || !ready;
-  publishBtn.textContent = queue.length > 1 ? `Publish ${queue.length} images` : "Publish";
+  publishBtn.textContent = queue.length > 1 ? `Publish ${queue.length} files` : "Publish";
+}
+
+function fileThumb(name, src) {
+  if (extOf(name) === "pdf") return `<div class="file-tile">PDF</div>`;
+  return `<img alt="" src="${escapeAttr(src)}">`;
 }
 
 function formatSize(bytes) {
@@ -174,7 +179,7 @@ function addFiles(fileList) {
       continue;
     }
     if (!ALLOWED.includes(extOf(file.name))) {
-      statusEl.textContent = `${file.name} is not an image type this page accepts.`;
+      statusEl.textContent = `${file.name} is not a file type this page accepts.`;
       continue;
     }
     queue.push({
@@ -183,7 +188,7 @@ function addFiles(fileList) {
       original: file.name,
       typed: "",
       size: file.size,
-      preview: URL.createObjectURL(file),
+      preview: extOf(file.name) === "pdf" ? "" : URL.createObjectURL(file),
     });
   }
   statusEl.textContent = "";
@@ -246,7 +251,7 @@ async function publish() {
     if (names.size !== files.length) throw new Error("Two files would get the same filename.");
     await commitFiles(files);
     statusEl.textContent = files.length === 1 ? `Published ${files[0].path}` : `Published ${files.length} images`;
-    queue.forEach((item) => URL.revokeObjectURL(item.preview));
+    queue.forEach((item) => { if (item.preview) URL.revokeObjectURL(item.preview); });
     queue = [];
     renderQueue();
     await loadLibrary();

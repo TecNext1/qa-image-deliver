@@ -1,4 +1,4 @@
-const IMAGE = /\.(png|jpe?g|gif|webp|avif|svg|ico|bmp|tiff?|heic|heif)$/i;
+const IMAGE = /\.(png|jpe?g|gif|webp|avif|svg|ico|bmp|tiff?|heic|heif|pdf)$/i;
 
 export default async (request, context) => {
   const url = new URL(request.url);
@@ -33,7 +33,7 @@ function notFound(pathname) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Image not found</title>
+  <title>File not found</title>
   <style>
     body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f3efe7; color: #1e1a16; font-family: Georgia, serif; }
     main { text-align: center; padding: 24px; }
@@ -42,7 +42,7 @@ function notFound(pathname) {
 </head>
 <body>
   <main>
-    <h1>Image not found</h1>
+    <h1>File not found</h1>
     <p>${name} isn’t available.</p>
   </main>
 </body>

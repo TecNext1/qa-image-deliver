@@ -62,4 +62,4 @@ https://cdn.jsdelivr.net/gh/TecNext1/qa-image-deliver@<commit>/Creta_Grand_1.png
 
 The script prints that pinned link after every publish. Use the `@main` link when you want the exact filename on the latest `main`.
 
-Accepted types: png, jpg, jpeg, gif, webp, avif, svg, ico, bmp, tif, tiff, heic, heif.
+Accepted types: png, jpg, jpeg, gif, webp, avif, svg, ico, bmp, tif, tiff, heic, heif, pdf.
