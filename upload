@@ -178,7 +178,9 @@ else
 fi
 
 git commit -m "$message"
-git push -u origin "$BRANCH"
+if ! git push -u origin "$BRANCH"; then
+  fail "Push failed. The commit is on local $BRANCH. If GitHub asked for a pull request, main is protected and ./upload needs an account that can push directly."
+fi
 
 sha="$(git rev-parse HEAD)"
 printf '\n'

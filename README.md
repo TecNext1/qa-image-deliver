@@ -30,6 +30,10 @@ The script copies each file here under its current filename, commits it, pushes 
 ./upload --dry-run ~/Desktop/Creta_Grand_1.png
 ```
 
+## If the push is rejected
+
+`main` on this repo is set to require a pull request. An admin can still push directly, and `./upload` does that. If GitHub rejects the push, allow direct pushes to `main` for this repository, or run the script from an account that can bypass that rule.
+
 ## By hand
 
 ```bash
