@@ -1,6 +1,11 @@
 # qa-image-deliver
 
-Designer page: connect this repo to Netlify and set one environment variable, `GITHUB_TOKEN`. Use a token that can write to this repo only, from an account that can push straight to `main`. Designers open the Netlify URL, drop images, and copy links. They never see the token.
+Designer page: https://image-deliver.netlify.app/
+
+In Netlify, set two environment variables and redeploy. Neither value is written into the page.
+
+- `GITHUB_TOKEN`: a fine-grained token for this repo only, contents read and write, from an account that can push straight to `main`.
+- `UPLOAD_PASSWORD`: a password you share with the team. They type it on the page. It is not a GitHub key.
 
 ```
 https://image-deliver.netlify.app/Creta_Grand_1.png

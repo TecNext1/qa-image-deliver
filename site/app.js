@@ -1,5 +1,5 @@
 const CFG = Object.assign(
-  { owner: "TecNext1", repo: "qa-image-deliver", branch: "main", token: "" },
+  { owner: "TecNext1", repo: "qa-image-deliver", branch: "main" },
   window.CDN_CONFIG || {}
 );
 
@@ -16,14 +16,17 @@ const grid = document.querySelector("#grid");
 const search = document.querySelector("#search");
 const countEl = document.querySelector("#count");
 const uploadNote = document.querySelector("#upload-note");
+const passwordInput = document.querySelector("#password");
 
 let library = [];
 let queue = [];
 let publishing = false;
 
-uploadNote.textContent = CFG.token
-  ? "The link uses the exact filename."
-  : "Uploads are off until GITHUB_TOKEN is set on Netlify. The library still works.";
+uploadNote.textContent = "The link uses the exact filename.";
+passwordInput.value = sessionStorage.getItem("deliver-password") || "";
+passwordInput.addEventListener("change", () => {
+  sessionStorage.setItem("deliver-password", passwordInput.value);
+});
 
 function extOf(name) {
   const i = name.lastIndexOf(".");
@@ -57,7 +60,6 @@ async function gh(path, options = {}) {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
   };
-  if (CFG.token) headers.Authorization = `Bearer ${CFG.token}`;
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
   const response = await fetch(`https://api.github.com${path}`, {
     method: options.method || "GET",
@@ -115,7 +117,7 @@ function renderLibrary() {
         <p class="url-preview">${escapeHtml(cdnUrl(file.name))}</p>
         <div class="card-actions">
           <button class="copy" type="button" data-copy="${escapeAttr(cdnUrl(file.name))}">Copy link</button>
-          ${CFG.token ? `<button class="linkish" type="button" data-remove="${escapeAttr(file.name)}" data-sha="${escapeAttr(file.sha)}">Remove</button>` : ""}
+          <button class="linkish" type="button" data-remove="${escapeAttr(file.name)}">Remove</button>
         </div>
       </div>
     </article>
@@ -158,7 +160,7 @@ function renderQueue() {
     try { targetName(item.original, item.typed); return item.size <= MAX_BYTES; }
     catch { return false; }
   });
-  publishBtn.disabled = publishing || !CFG.token || !ready;
+  publishBtn.disabled = publishing || !ready;
   publishBtn.textContent = queue.length > 1 ? `Publish ${queue.length} files` : "Publish";
 }
 
@@ -238,7 +240,10 @@ queueEl.addEventListener("click", (event) => {
 publishBtn.addEventListener("click", publish);
 
 async function publish() {
-  if (!CFG.token) return;
+  if (!passwordInput.value) {
+    statusEl.textContent = "Enter the team password.";
+    return;
+  }
   publishing = true;
   renderQueue();
   statusEl.textContent = "Publishing…";
@@ -249,8 +254,8 @@ async function publish() {
     }));
     const names = new Set(files.map((file) => file.path));
     if (names.size !== files.length) throw new Error("Two files would get the same filename.");
-    await commitFiles(files);
-    statusEl.textContent = files.length === 1 ? `Published ${files[0].path}` : `Published ${files.length} images`;
+    for (const file of files) await uploadFile(file.path, file.file);
+    statusEl.textContent = files.length === 1 ? `Published ${files[0].path}` : `Published ${files.length} files`;
     queue.forEach((item) => { if (item.preview) URL.revokeObjectURL(item.preview); });
     queue = [];
     renderQueue();
@@ -263,42 +268,31 @@ async function publish() {
   }
 }
 
-async function commitFiles(files, attempt = 0) {
-  const blobs = [];
-  for (const file of files) {
-    const bytes = new Uint8Array(await file.file.arrayBuffer());
-    const blob = await gh(`/repos/${CFG.owner}/${CFG.repo}/git/blobs`, {
-      method: "POST",
-      body: { content: bytesToBase64(bytes), encoding: "base64" },
-    });
-    blobs.push({ path: file.path, sha: blob.sha });
-  }
-  const head = await gh(`/repos/${CFG.owner}/${CFG.repo}/commits/${encodeURIComponent(CFG.branch)}`);
-  const tree = await gh(`/repos/${CFG.owner}/${CFG.repo}/git/trees`, {
+async function api(body) {
+  sessionStorage.setItem("deliver-password", passwordInput.value);
+  const response = await fetch("/api/publish", {
     method: "POST",
-    body: {
-      base_tree: head.commit.tree.sha,
-      tree: blobs.map((blob) => ({ path: blob.path, mode: "100644", type: "blob", sha: blob.sha })),
+    headers: {
+      "content-type": "application/json",
+      "x-upload-password": passwordInput.value,
     },
+    body: JSON.stringify(body),
   });
-  const message = files.length === 1
-    ? `Publish ${files[0].path}`
-    : `Publish ${files.length} images\n\n${files.map((file) => file.path).join("\n")}`;
-  const commit = await gh(`/repos/${CFG.owner}/${CFG.repo}/git/commits`, {
-    method: "POST",
-    body: { message, tree: tree.sha, parents: [head.sha] },
-  });
-  try {
-    await gh(`/repos/${CFG.owner}/${CFG.repo}/git/refs/heads/${encodeURIComponent(CFG.branch)}`, {
-      method: "PATCH",
-      body: { sha: commit.sha },
-    });
-  } catch (error) {
-    if (attempt < 3 && /fast-forward|Update is not a fast forward/i.test(error.message)) {
-      return commitFiles(files, attempt + 1);
-    }
-    throw error;
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || "Upload failed.");
+  return data;
+}
+
+async function uploadFile(path, file) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const chunkSize = 2 * 1024 * 1024;
+  const total = Math.max(1, Math.ceil(bytes.length / chunkSize));
+  const id = crypto.randomUUID();
+  for (let index = 0; index < total; index += 1) {
+    const slice = bytes.subarray(index * chunkSize, (index + 1) * chunkSize);
+    await api({ action: "chunk", id, index, data: bytesToBase64(slice) });
   }
+  await api({ action: "finish", id, path, total });
 }
 
 grid.addEventListener("click", async (event) => {
@@ -317,38 +311,19 @@ grid.addEventListener("click", async (event) => {
     remove.textContent = "Confirm remove";
     return;
   }
+  if (!passwordInput.value) {
+    statusEl.textContent = "Enter the team password.";
+    return;
+  }
   statusEl.textContent = `Removing ${remove.dataset.remove}…`;
   try {
-    await deleteFile(remove.dataset.remove);
+    await api({ action: "delete", path: remove.dataset.remove });
     statusEl.textContent = `Removed ${remove.dataset.remove}`;
     await loadLibrary();
   } catch (error) {
     statusEl.textContent = error.message;
   }
 });
-
-async function deleteFile(path, attempt = 0) {
-  const head = await gh(`/repos/${CFG.owner}/${CFG.repo}/commits/${encodeURIComponent(CFG.branch)}`);
-  const tree = await gh(`/repos/${CFG.owner}/${CFG.repo}/git/trees`, {
-    method: "POST",
-    body: { base_tree: head.commit.tree.sha, tree: [{ path, mode: "100644", type: "blob", sha: null }] },
-  });
-  const commit = await gh(`/repos/${CFG.owner}/${CFG.repo}/git/commits`, {
-    method: "POST",
-    body: { message: `Remove ${path}`, tree: tree.sha, parents: [head.sha] },
-  });
-  try {
-    await gh(`/repos/${CFG.owner}/${CFG.repo}/git/refs/heads/${encodeURIComponent(CFG.branch)}`, {
-      method: "PATCH",
-      body: { sha: commit.sha },
-    });
-  } catch (error) {
-    if (attempt < 3 && /fast-forward|Update is not a fast forward/i.test(error.message)) {
-      return deleteFile(path, attempt + 1);
-    }
-    throw error;
-  }
-}
 
 async function copyText(value) {
   try {

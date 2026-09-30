@@ -5,6 +5,10 @@
 [build.environment]
   NODE_VERSION = "20"
 
+[functions]
+  [functions."publish"]
+    timeout = 26
+
 [[edge_functions]]
   function = "images"
   path = "/*"
