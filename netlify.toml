@@ -5,9 +5,6 @@
 [build.environment]
   NODE_VERSION = "20"
 
-# Files that exist in the site (the page, CSS, JS) are served as-is.
-# Any other path, such as /Creta_Grand_1.png, is loaded from jsDelivr.
-[[redirects]]
-  from = "/*"
-  to = "https://cdn.jsdelivr.net/gh/TecNext1/qa-image-deliver@main/:splat"
-  status = 200
+[[edge_functions]]
+  function = "images"
+  path = "/*"
