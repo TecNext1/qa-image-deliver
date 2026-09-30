@@ -1,0 +1,189 @@
+#!/usr/bin/env bash
+# Copy images into this repo, push them to main, and print the jsDelivr URL.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "$ROOT"
+
+MAX_BYTES=$((20 * 1024 * 1024))
+BRANCH="main"
+DRY_RUN=0
+
+usage() {
+  cat <<'EOF'
+Usage: ./upload [--dry-run] image [image...]
+
+Copies each image to the repo root, keeping the exact filename, commits,
+pushes main, and prints:
+
+  https://cdn.jsdelivr.net/gh/TecNext1/qa-image-deliver@main/<filename>
+
+--dry-run   print the URL only; do not copy, commit, or push
+EOF
+}
+
+fail() {
+  printf 'upload: %s\n' "$1" >&2
+  exit 1
+}
+
+is_allowed_image() {
+  local ext
+  ext="$(printf '%s' "${1##*.}" | tr '[:upper:]' '[:lower:]')"
+  case "$ext" in
+    png|jpg|jpeg|gif|webp|avif|svg|ico|bmp|tif|tiff|heic|heif) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+encode_filename() {
+  python3 -c 'import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1]))' "$1"
+}
+
+repo_slug() {
+  local url slug
+  url="$(git remote get-url origin 2>/dev/null || true)"
+  [[ -n "$url" ]] || fail "No origin remote. Expected https://github.com/TecNext1/qa-image-deliver.git"
+  slug="${url%.git}"
+  slug="${slug#https://github.com/}"
+  slug="${slug#http://github.com/}"
+  slug="${slug#git@github.com:}"
+  slug="${slug#ssh://git@github.com/}"
+  [[ "$slug" == */* ]] || fail "Could not read the GitHub owner/repo from origin ($url)"
+  printf '%s\n' "$slug"
+}
+
+ensure_author() {
+  local name email info login id
+  name="$(git config --get user.name || true)"
+  email="$(git config --get user.email || true)"
+  if [[ -z "$name" || -z "$email" ]]; then
+    command -v gh >/dev/null 2>&1 || fail "Set git user.name and user.email, or install and log in with gh."
+    gh auth status >/dev/null 2>&1 || fail "Set git user.name and user.email, or log in with gh auth login."
+    info="$(gh api user --jq '[.name // .login, .login, (.id|tostring), (.email // "")] | @tsv')"
+    IFS=$'\t' read -r name login id email <<<"$info"
+    [[ -n "$name" && "$name" != "null" ]] || name="$login"
+    if [[ -z "$email" || "$email" == "null" ]]; then
+      email="${id}+${login}@users.noreply.github.com"
+    fi
+  fi
+  export GIT_AUTHOR_NAME="$name"
+  export GIT_AUTHOR_EMAIL="$email"
+  export GIT_COMMITTER_NAME="$name"
+  export GIT_COMMITTER_EMAIL="$email"
+}
+
+files=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --dry-run)
+      DRY_RUN=1
+      shift
+      ;;
+    --)
+      shift
+      while [[ $# -gt 0 ]]; do
+        files+=("$1")
+        shift
+      done
+      ;;
+    -*)
+      fail "Unknown option: $1"
+      ;;
+    *)
+      files+=("$1")
+      shift
+      ;;
+  esac
+done
+
+[[ ${#files[@]} -gt 0 ]] || {
+  usage >&2
+  exit 1
+}
+
+command -v python3 >/dev/null 2>&1 || fail "python3 is required to encode filenames."
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 || fail "Run this from a clone of qa-image-deliver."
+
+current_branch="$(git symbolic-ref --short HEAD 2>/dev/null || true)"
+[[ -n "$current_branch" ]] || fail "Checkout $BRANCH first. Detached HEAD cannot be published."
+[[ "$current_branch" == "$BRANCH" ]] || fail "Checkout $BRANCH first (currently on $current_branch)."
+
+SLUG="$(repo_slug)"
+changed=()
+
+for src in "${files[@]}"; do
+  [[ -f "$src" ]] || fail "Not a file: $src"
+  base="$(basename "$src")"
+  [[ "$base" != "." && "$base" != ".." && "$base" != */* ]] || fail "Unsafe filename: $base"
+  case "$base" in
+    README.md|upload|.gitignore|.gitattributes)
+      fail "$base is part of this tool. Rename the image before uploading."
+      ;;
+  esac
+  is_allowed_image "$base" || fail "$base is not an image this CDN host accepts (png, jpg, jpeg, gif, webp, avif, svg, ico, bmp, tif, tiff, heic, heif)."
+
+  size="$(stat -f%z "$src" 2>/dev/null || stat -c%s "$src")"
+  [[ "$size" -le "$MAX_BYTES" ]] || fail "$base is ${size} bytes. jsDelivr serves GitHub files up to 20 MB."
+
+  encoded="$(encode_filename "$base")"
+  main_url="https://cdn.jsdelivr.net/gh/${SLUG}@${BRANCH}/${encoded}"
+  dest="$ROOT/$base"
+
+  if [[ -e "$dest" ]] && cmp -s "$src" "$dest"; then
+    printf 'unchanged  %s\n%s\n\n' "$base" "$main_url"
+    continue
+  fi
+
+  if [[ -e "$dest" ]]; then
+    printf 'replacing  %s\nThe @main link can keep the previous image for up to 12 hours.\nPurge: https://purge.jsdelivr.net/gh/%s@%s/%s\n\n' \
+      "$base" "$SLUG" "$BRANCH" "$encoded"
+  fi
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    printf 'would publish  %s\n%s\n\n' "$base" "$main_url"
+    continue
+  fi
+
+  if [[ "$(cd "$(dirname "$src")" && pwd)/$base" != "$dest" ]]; then
+    cp "$src" "$dest"
+  fi
+  git add -- "$dest"
+  changed+=("$base")
+done
+
+if [[ "$DRY_RUN" -eq 1 ]]; then
+  printf 'Dry run. Nothing was copied, committed, or pushed.\n'
+  exit 0
+fi
+
+if [[ ${#changed[@]} -eq 0 ]]; then
+  printf 'Nothing new to publish.\n'
+  exit 0
+fi
+
+ensure_author
+
+if [[ ${#changed[@]} -eq 1 ]]; then
+  message="Publish ${changed[0]}"
+else
+  message="Publish ${#changed[@]} images"
+  for base in "${changed[@]}"; do
+    message="${message}"$'\n'"${base}"
+  done
+fi
+
+git commit -m "$message"
+git push -u origin "$BRANCH"
+
+sha="$(git rev-parse HEAD)"
+printf '\n'
+for base in "${changed[@]}"; do
+  encoded="$(encode_filename "$base")"
+  printf '%s\nhttps://cdn.jsdelivr.net/gh/%s@%s/%s\nPinned: https://cdn.jsdelivr.net/gh/%s@%s/%s\n\n' \
+    "$base" "$SLUG" "$BRANCH" "$encoded" "$SLUG" "$sha" "$encoded"
+done
