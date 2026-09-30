@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Deliver</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560;9..144,650&family=Outfit:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <p class="mark">Deliver</p>
+      <h1>Images for the team.</h1>
+    </div>
+    <p class="lede">Drop a file, keep the name or type a new one, then copy the link.</p>
+  </header>
+
+  <main>
+    <section class="panel" id="upload-panel">
+      <div class="panel-head">
+        <h2>Add</h2>
+        <p id="upload-note"></p>
+      </div>
+      <label class="drop" id="drop">
+        <input id="file-input" type="file" accept="image/*,.heic,.heif,.svg,.avif,.ico,.bmp,.tif,.tiff" multiple hidden>
+        <span class="drop-title">Drop images here</span>
+        <span class="drop-sub">or choose files</span>
+      </label>
+      <ul class="queue" id="queue"></ul>
+      <div class="publish-row">
+        <button class="primary" id="publish" type="button" disabled>Publish</button>
+        <p class="status" id="status" role="status"></p>
+      </div>
+    </section>
+
+    <section class="panel library">
+      <div class="panel-head library-head">
+        <div>
+          <h2>Library</h2>
+          <p id="count"></p>
+        </div>
+        <input id="search" type="search" placeholder="Search filenames" autocomplete="off">
+      </div>
+      <div class="grid" id="grid"></div>
+    </section>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
