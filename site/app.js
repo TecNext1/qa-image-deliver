@@ -207,6 +207,7 @@ function renderLibrary() {
   selectShown.textContent = shown.length && shown.every((file) => selected.has(file.path)) ? "Clear shown" : "Select shown";
   countEl.textContent = `${shown.length} of ${library.length} file${library.length === 1 ? "" : "s"}`;
   if (!shown.length) {
+    pdfThumbRun += 1;
     grid.innerHTML = `<p class="empty">${library.length ? "Nothing matches." : "No files yet. Add one on the left."}</p>`;
     return;
   }
@@ -235,6 +236,7 @@ function renderLibrary() {
     </article>
   `;
   }).join("");
+  paintPdfThumbs();
 }
 
 function visibleFiles() {
@@ -321,8 +323,72 @@ function publishPath(filename) {
 }
 
 function fileThumb(name, src) {
-  if (extOf(name) === "pdf") return `<div class="file-tile">PDF</div>`;
+  if (extOf(name) === "pdf") {
+    return `<div class="file-tile pdf-label">PDF</div><canvas class="pdf-thumb" data-pdf="${escapeAttr(src)}" hidden></canvas>`;
+  }
   return `<img alt="" src="${escapeAttr(src)}">`;
+}
+
+let pdfjsLib;
+let pdfThumbRun = 0;
+
+function loadPdfjs() {
+  if (!pdfjsLib) {
+    pdfjsLib = import("https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/build/pdf.min.mjs").then((lib) => {
+      lib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/build/pdf.worker.min.mjs";
+      return lib;
+    });
+  }
+  return pdfjsLib;
+}
+
+function paintPdfThumbs() {
+  const run = ++pdfThumbRun;
+  const pending = [...grid.querySelectorAll("canvas.pdf-thumb")];
+  const pump = async () => {
+    while (pending.length && run === pdfThumbRun) await paintPdf(pending.shift(), run);
+  };
+  Promise.all([pump(), pump(), pump()]).catch(() => {});
+}
+
+async function paintPdf(canvas, run) {
+  if (!canvas || run !== pdfThumbRun || !canvas.isConnected) return;
+  try {
+    const lib = await loadPdfjs();
+    if (run !== pdfThumbRun || !canvas.isConnected) return;
+    const doc = await lib.getDocument({
+      url: canvas.dataset.pdf,
+      cMapUrl: "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/cmaps/",
+      cMapPacked: true,
+      standardFontDataUrl: "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/standard_fonts/",
+    }).promise;
+    if (run !== pdfThumbRun || !canvas.isConnected) {
+      await doc.destroy();
+      return;
+    }
+    const page = await doc.getPage(1);
+    const thumb = canvas.closest(".thumb");
+    const boxW = thumb.clientWidth || 240;
+    const boxH = thumb.clientHeight || 320;
+    const ratio = window.devicePixelRatio || 1;
+    const base = page.getViewport({ scale: 1 });
+    const scale = Math.min(boxW / base.width, boxH / base.height) * ratio;
+    const viewport = page.getViewport({ scale });
+    canvas.width = Math.floor(viewport.width);
+    canvas.height = Math.floor(viewport.height);
+    canvas.style.width = `${Math.floor(viewport.width / ratio)}px`;
+    canvas.style.height = `${Math.floor(viewport.height / ratio)}px`;
+    await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+    if (run !== pdfThumbRun || !canvas.isConnected) {
+      await doc.destroy();
+      return;
+    }
+    canvas.hidden = false;
+    canvas.previousElementSibling?.remove();
+    await doc.destroy();
+  } catch {
+    /* The PDF label stays in place. */
+  }
 }
 
 function formatSize(bytes) {
