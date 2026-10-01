@@ -173,7 +173,7 @@ main {
 
 .tool-actions { display: flex; gap: 8px; grid-column: 2; grid-row: 1; justify-self: end; }
 
-.tool-actions button, .folders button {
+.tool-actions button, .folders button, .new-folder button {
   border: 1px solid var(--line);
   background: #fff;
   border-radius: 10px;
@@ -193,10 +193,21 @@ main {
 #select-mode.on { background: var(--ink); border-color: var(--ink); color: #fff; }
 .tool-actions .select-only { display: none; }
 .library.selecting .tool-actions .select-only { display: inline-block; }
-.tool-actions button:hover:not(:disabled), .folders button:hover { border-color: #cfc6b8; }
+.tool-actions button:hover:not(:disabled), .folders button:hover, .new-folder button:hover { border-color: #cfc6b8; }
 
-.folders { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.folders { display: flex; flex-wrap: wrap; gap: 8px; }
 .folders:empty { display: none; }
+.folder-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
+.new-folder { display: flex; gap: 8px; align-items: center; }
+.new-folder input {
+  height: 34px;
+  width: 160px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0 10px;
+  background: #fff;
+}
+#new-folder-open { border-style: dashed; }
 .folders button.on, .folders button.hot {
   background: var(--ink);
   border-color: var(--ink);

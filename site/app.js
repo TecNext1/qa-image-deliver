@@ -19,6 +19,10 @@ const uploadNote = document.querySelector("#upload-note");
 const passwordInput = document.querySelector("#password");
 const folderInput = document.querySelector("#folder");
 const foldersEl = document.querySelector("#folders");
+const newFolderForm = document.querySelector("#new-folder");
+const newFolderOpen = document.querySelector("#new-folder-open");
+const newFolderName = document.querySelector("#new-folder-name");
+const newFolderSave = document.querySelector("#new-folder-save");
 
 const sortNew = document.querySelector("#sort-new");
 const sortName = document.querySelector("#sort-name");
@@ -39,6 +43,7 @@ let modelFilter = "";
 let typeFilter = "";
 let languageFilter = "";
 const selected = new Set();
+const extraFolders = new Set(JSON.parse(sessionStorage.getItem("deliver-folders") || "[]"));
 
 uploadNote.textContent = "Leave the folder blank and existing links stay the same.";
 passwordInput.value = sessionStorage.getItem("deliver-password") || "";
@@ -177,7 +182,10 @@ function fileMeta(name) {
 
 function renderLibrary() {
   const shown = visibleFiles();
-  const folders = [...new Set(library.map((file) => file.folder).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const folders = [...new Set([
+    ...library.map((file) => file.folder).filter(Boolean),
+    ...extraFolders,
+  ])].sort((a, b) => a.localeCompare(b));
   foldersEl.innerHTML = folders.length ? [
     { id: "all", label: "All" },
     { id: "root", label: "No folder" },
@@ -561,6 +569,30 @@ foldersEl.addEventListener("dragleave", (event) => {
   const button = event.target.closest("[data-folder]");
   if (button) button.classList.remove("hot");
 });
+async function moveFiles(paths, folder) {
+  if (!passwordInput.value) {
+    statusEl.textContent = "Enter the team password.";
+    return false;
+  }
+  statusEl.textContent = "Moving…";
+  for (const path of paths) {
+    const next = folder ? `${folder}/${baseName(path)}` : baseName(path);
+    if (next === path) continue;
+    await api({ action: "rename", from: path, to: next });
+    selected.delete(path);
+  }
+  statusEl.textContent = "Moved. The old link still opens the file.";
+  await loadLibrary();
+  return true;
+}
+
+function showNewFolder(open) {
+  newFolderOpen.hidden = open;
+  newFolderName.hidden = !open;
+  newFolderSave.hidden = !open;
+  if (open) newFolderName.focus();
+}
+
 foldersEl.addEventListener("drop", async (event) => {
   const button = event.target.closest("[data-folder]");
   if (!button || button.dataset.folder === "all") return;
@@ -577,20 +609,8 @@ foldersEl.addEventListener("drop", async (event) => {
   let paths = [];
   try { paths = JSON.parse(event.dataTransfer.getData("text/plain")); } catch { paths = []; }
   if (!Array.isArray(paths) || !paths.length) return;
-  if (!passwordInput.value) {
-    statusEl.textContent = "Enter the team password.";
-    return;
-  }
-  statusEl.textContent = "Moving…";
   try {
-    for (const path of paths) {
-      const next = folder ? `${folder}/${baseName(path)}` : baseName(path);
-      if (next === path) continue;
-      await api({ action: "rename", from: path, to: next });
-      selected.delete(path);
-    }
-    statusEl.textContent = "Moved. The old link still opens the file.";
-    await loadLibrary();
+    await moveFiles(paths, folder);
   } catch (error) {
     statusEl.textContent = error.message;
   }
@@ -625,6 +645,38 @@ filtersEl.addEventListener("change", (event) => {
 });
 
 folderInput.addEventListener("input", renderQueue);
+newFolderOpen.addEventListener("click", () => showNewFolder(true));
+newFolderForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  let name = "";
+  try { name = cleanFolder(newFolderName.value); }
+  catch (error) {
+    statusEl.textContent = error.message;
+    return;
+  }
+  if (!name) {
+    statusEl.textContent = "Type a folder name.";
+    return;
+  }
+  extraFolders.add(name);
+  sessionStorage.setItem("deliver-folders", JSON.stringify([...extraFolders]));
+  folderInput.value = name;
+  renderQueue();
+  newFolderName.value = "";
+  showNewFolder(false);
+  const paths = [...selected];
+  if (!paths.length) {
+    statusEl.textContent = `${name} is ready. Drag files onto it, or publish into it.`;
+    renderLibrary();
+    return;
+  }
+  try {
+    await moveFiles(paths, name);
+  } catch (error) {
+    statusEl.textContent = error.message;
+    renderLibrary();
+  }
+});
 foldersEl.addEventListener("click", (event) => {
   const button = event.target.closest("[data-folder]");
   if (!button) return;

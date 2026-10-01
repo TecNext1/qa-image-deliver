@@ -61,7 +61,14 @@
           <button type="button" id="copy-selected" class="select-only" disabled>Copy links</button>
         </div>
       </div>
-      <div class="folders" id="folders"></div>
+      <div class="folder-row">
+        <div class="folders" id="folders"></div>
+        <form class="new-folder" id="new-folder">
+          <button type="button" id="new-folder-open">New folder</button>
+          <input id="new-folder-name" type="text" placeholder="Folder name" autocomplete="off" hidden>
+          <button type="submit" id="new-folder-save" hidden>Create</button>
+        </form>
+      </div>
       <div class="grid" id="grid"></div>
     </section>
   </main>
