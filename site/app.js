@@ -613,6 +613,43 @@ sortNew.addEventListener("click", () => { sortMode = "new"; renderLibrary(); });
 sortName.addEventListener("click", () => { sortMode = "name"; renderLibrary(); });
 sortType.addEventListener("click", () => { sortMode = "type"; renderLibrary(); });
 
+let dragGhostEl = null;
+
+function clearDrag() {
+  document.querySelectorAll(".card.is-dragging").forEach((card) => card.classList.remove("is-dragging"));
+  dragGhostEl?.remove();
+  dragGhostEl = null;
+  document.body.classList.remove("is-dragging-file");
+}
+
+function makeDragGhost(card, count) {
+  const ghost = document.createElement("div");
+  ghost.className = "drag-ghost";
+  const media = card.querySelector(".thumb img, .thumb canvas, .thumb .file-tile");
+  if (media?.tagName === "CANVAS") {
+    const copy = document.createElement("canvas");
+    copy.width = media.width;
+    copy.height = media.height;
+    copy.getContext("2d").drawImage(media, 0, 0);
+    ghost.appendChild(copy);
+  } else if (media?.tagName === "IMG") {
+    const image = document.createElement("img");
+    image.alt = "";
+    image.src = media.currentSrc || media.src;
+    ghost.appendChild(image);
+  } else {
+    const tile = document.createElement("div");
+    tile.className = "file-tile";
+    tile.textContent = "PDF";
+    ghost.appendChild(tile);
+  }
+  const label = document.createElement("p");
+  label.textContent = count > 1 ? `${count} files` : card.querySelector("h3").textContent;
+  ghost.appendChild(label);
+  document.body.appendChild(ghost);
+  return ghost;
+}
+
 grid.addEventListener("dragstart", (event) => {
   const card = event.target.closest(".card");
   if (!card || event.target.closest("button, a, input, label")) {
@@ -623,7 +660,16 @@ grid.addEventListener("dragstart", (event) => {
   const paths = selected.has(path) && selected.size > 1 ? [...selected] : [path];
   event.dataTransfer.setData("text/plain", JSON.stringify(paths));
   event.dataTransfer.effectAllowed = "move";
+  clearDrag();
+  dragGhostEl = makeDragGhost(card, paths.length);
+  event.dataTransfer.setDragImage(dragGhostEl, 84, 64);
+  for (const item of paths) {
+    grid.querySelector(`.card[data-name="${CSS.escape(item)}"]`)?.classList.add("is-dragging");
+  }
+  document.body.classList.add("is-dragging-file");
 });
+
+grid.addEventListener("dragend", clearDrag);
 
 foldersEl.addEventListener("dragover", (event) => {
   const button = event.target.closest("[data-folder]");
