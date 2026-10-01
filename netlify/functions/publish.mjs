@@ -34,7 +34,7 @@ export const config = { path: "/api/publish" };
 function authorized(request) {
   const expected = process.env.UPLOAD_PASSWORD || "";
   const given = request.headers.get("x-upload-password") || "";
-  if (!expected || !given) return false;
+  if (!expected || !given || expected.length > 512 || given.length > 512) return false;
   const a = Buffer.from(expected);
   const b = Buffer.from(given);
   if (a.length !== b.length) return false;
