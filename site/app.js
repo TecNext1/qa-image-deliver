@@ -324,9 +324,9 @@ function publishPath(filename) {
 
 function fileThumb(name, src) {
   if (extOf(name) === "pdf") {
-    return `<div class="file-tile pdf-label">PDF</div><canvas class="pdf-thumb" data-pdf="${escapeAttr(src)}" hidden></canvas>`;
+    return `<div class="file-tile pdf-label">PDF</div><canvas class="pdf-thumb" draggable="false" data-pdf="${escapeAttr(src)}" hidden></canvas>`;
   }
-  return `<img alt="" src="${escapeAttr(src)}">`;
+  return `<img alt="" draggable="false" src="${escapeAttr(src)}">`;
 }
 
 let pdfjsLib;

@@ -395,6 +395,14 @@ main {
   background: #fff;
 }
 
+.thumb img,
+.thumb canvas,
+.card .file-tile {
+  -webkit-user-drag: none;
+  user-select: none;
+  pointer-events: none;
+}
+
 .card .file-tile {
   display: grid;
   place-items: center;
