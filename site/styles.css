@@ -190,6 +190,9 @@ main {
 }
 
 #copy-selected:disabled { opacity: 0.45; cursor: default; }
+#select-mode.on { background: var(--ink); border-color: var(--ink); color: #fff; }
+.tool-actions .select-only { display: none; }
+.library.selecting .tool-actions .select-only { display: inline-block; }
 .tool-actions button:hover:not(:disabled), .folders button:hover { border-color: #cfc6b8; }
 
 .folders { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
@@ -369,6 +372,9 @@ main {
 
 .card .file-tile { font-size: 18px; }
 
+.pick { display: none; }
+.library.selecting .pick { display: grid; }
+
 .pick {
   position: absolute;
   top: 8px;
@@ -377,7 +383,6 @@ main {
   width: 28px;
   height: 28px;
   margin: 0;
-  display: grid;
   place-items: center;
   background: rgba(255, 255, 255, 0.95);
   border: 1px solid var(--line);

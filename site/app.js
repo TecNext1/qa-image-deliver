@@ -23,6 +23,8 @@ const foldersEl = document.querySelector("#folders");
 const sortNew = document.querySelector("#sort-new");
 const sortName = document.querySelector("#sort-name");
 const sortType = document.querySelector("#sort-type");
+const libraryEl = document.querySelector(".library");
+const selectMode = document.querySelector("#select-mode");
 const selectShown = document.querySelector("#select-shown");
 const copySelected = document.querySelector("#copy-selected");
 const filtersEl = document.querySelector("#filters");
@@ -32,6 +34,7 @@ let queue = [];
 let publishing = false;
 let folderFilter = null;
 let sortMode = "new";
+let selecting = false;
 let modelFilter = "";
 let typeFilter = "";
 let languageFilter = "";
@@ -185,6 +188,9 @@ function renderLibrary() {
     filterField("Type", unique("type"), typeFilter, "type"),
     filterField("Language", unique("language"), languageFilter, "language"),
   ].join("");
+  libraryEl.classList.toggle("selecting", selecting);
+  selectMode.textContent = selecting ? "Done" : "Select";
+  selectMode.classList.toggle("on", selecting);
   sortNew.classList.toggle("on", sortMode === "new");
   sortName.classList.toggle("on", sortMode === "name");
   sortType.classList.toggle("on", sortMode === "type");
@@ -588,6 +594,11 @@ foldersEl.addEventListener("drop", async (event) => {
   } catch (error) {
     statusEl.textContent = error.message;
   }
+});
+selectMode.addEventListener("click", () => {
+  selecting = !selecting;
+  if (!selecting) selected.clear();
+  renderLibrary();
 });
 selectShown.addEventListener("click", () => {
   const shown = visibleFiles();
