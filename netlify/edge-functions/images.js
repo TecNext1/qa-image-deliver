@@ -6,7 +6,7 @@ export default async (request, context) => {
 
   let upstream;
   try {
-    const encodedPath = url.pathname.split("/").map((part) => encodeURIComponent(part)).join("/");
+    const encodedPath = url.pathname.split("/").map((part) => encodeURIComponent(decodeURIComponent(part))).join("/");
     upstream = await fetch(
       "https://cdn.jsdelivr.net/gh/TecNext1/qa-image-deliver@main" + encodedPath
     );
