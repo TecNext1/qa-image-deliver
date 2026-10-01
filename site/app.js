@@ -17,12 +17,15 @@ const search = document.querySelector("#search");
 const countEl = document.querySelector("#count");
 const uploadNote = document.querySelector("#upload-note");
 const passwordInput = document.querySelector("#password");
+const folderInput = document.querySelector("#folder");
+const foldersEl = document.querySelector("#folders");
 
 let library = [];
 let queue = [];
 let publishing = false;
+let folderFilter = null;
 
-uploadNote.textContent = "The link uses the exact filename.";
+uploadNote.textContent = "Leave the folder blank and existing links stay the same.";
 passwordInput.value = sessionStorage.getItem("deliver-password") || "";
 passwordInput.addEventListener("change", () => {
   sessionStorage.setItem("deliver-password", passwordInput.value);
@@ -33,13 +36,39 @@ function extOf(name) {
   return i >= 0 ? name.slice(i + 1).toLowerCase() : "";
 }
 
-function cdnUrl(name) {
-  return `https://image-deliver.netlify.app/${encodeURIComponent(name)}`;
+function encodePath(path) {
+  return path.split("/").map(encodeURIComponent).join("/");
 }
 
-function previewUrl(name, sha) {
-  const url = `https://raw.githubusercontent.com/${CFG.owner}/${CFG.repo}/${CFG.branch}/${encodeURIComponent(name)}`;
+function cdnUrl(path) {
+  return `https://image-deliver.netlify.app/${encodePath(path)}`;
+}
+
+function previewUrl(path, sha) {
+  const url = `https://raw.githubusercontent.com/${CFG.owner}/${CFG.repo}/${CFG.branch}/${encodePath(path)}`;
   return sha ? `${url}?v=${sha}` : url;
+}
+
+function baseName(path) {
+  const slash = path.lastIndexOf("/");
+  return slash === -1 ? path : path.slice(slash + 1);
+}
+
+function folderOf(path) {
+  const slash = path.lastIndexOf("/");
+  return slash === -1 ? "" : path.slice(0, slash);
+}
+
+function cleanFolder(value) {
+  const folder = (value || "").trim().replace(/^\/+|\/+$/g, "");
+  if (!folder) return "";
+  if (/[\\/]/.test(folder) || folder.includes("..") || folder === "." ) {
+    throw new Error("Use one folder name, with no slashes.");
+  }
+  if (["site", "netlify", "scripts", ".github"].includes(folder.toLowerCase())) {
+    throw new Error("Pick another folder name.");
+  }
+  return folder;
 }
 
 function targetName(original, typed) {
@@ -89,10 +118,11 @@ function bytesToBase64(bytes) {
 async function loadLibrary() {
   grid.innerHTML = `<p class="empty">Loading images…</p>`;
   try {
-    const entries = await gh(`/repos/${CFG.owner}/${CFG.repo}/contents/?ref=${encodeURIComponent(CFG.branch)}`);
-    library = (Array.isArray(entries) ? entries : [])
-      .filter((entry) => entry.type === "file" && ALLOWED.includes(extOf(entry.name)))
-      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    const tree = await gh(`/repos/${CFG.owner}/${CFG.repo}/git/trees/${encodeURIComponent(CFG.branch)}?recursive=1`);
+    library = (tree.tree || [])
+      .filter((entry) => entry.type === "blob" && ALLOWED.includes(extOf(entry.path)) && !/^(site|netlify|scripts)\//.test(entry.path))
+      .map((entry) => ({ ...entry, name: baseName(entry.path), folder: folderOf(entry.path) }))
+      .sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true }));
   } catch (error) {
     library = [];
     grid.innerHTML = `<p class="empty">Could not load the library. ${error.message}</p>`;
@@ -103,21 +133,33 @@ async function loadLibrary() {
 
 function renderLibrary() {
   const query = search.value.trim().toLowerCase();
-  const shown = library.filter((file) => file.name.toLowerCase().includes(query));
-  countEl.textContent = `${library.length} file${library.length === 1 ? "" : "s"}`;
+  const folders = [...new Set(library.map((file) => file.folder).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  foldersEl.innerHTML = folders.length ? [
+    { id: "all", label: "All" },
+    { id: "root", label: "No folder" },
+    ...folders.map((folder) => ({ id: folder, label: folder })),
+  ].map((item) => `<button type="button" data-folder="${escapeAttr(item.id)}" class="${(item.id === "all" && folderFilter === null) || item.id === folderFilter || (item.id === "root" && folderFilter === "") ? "on" : ""}">${escapeHtml(item.label)}</button>`).join("") : "";
+  const shown = library.filter((file) => {
+    const nameMatch = file.name.toLowerCase().includes(query) || file.folder.toLowerCase().includes(query);
+    if (!nameMatch) return false;
+    if (folderFilter === null) return true;
+    return file.folder === folderFilter;
+  });
+  countEl.textContent = `${shown.length} of ${library.length} file${library.length === 1 ? "" : "s"}`;
   if (!shown.length) {
-    grid.innerHTML = `<p class="empty">${library.length ? "No filenames match." : "No files yet. Add one on the left."}</p>`;
+    grid.innerHTML = `<p class="empty">${library.length ? "Nothing matches." : "No files yet. Add one on the left."}</p>`;
     return;
   }
   grid.innerHTML = shown.map((file) => `
-    <article class="card" data-name="${escapeAttr(file.name)}">
-      ${fileThumb(file.name, previewUrl(file.name, file.sha))}
+    <article class="card" data-name="${escapeAttr(file.path)}">
+      ${fileThumb(file.name, previewUrl(file.path, file.sha))}
       <div class="card-body">
+        ${file.folder ? `<p class="folder-label">${escapeHtml(file.folder)}</p>` : ""}
         <h3>${escapeHtml(file.name)}</h3>
-        <p class="url-preview">${escapeHtml(cdnUrl(file.name))}</p>
+        <p class="url-preview">${escapeHtml(cdnUrl(file.path))}</p>
         <div class="card-actions">
-          <button class="copy" type="button" data-copy="${escapeAttr(cdnUrl(file.name))}">Copy link</button>
-          <button class="linkish" type="button" data-remove="${escapeAttr(file.name)}">Remove</button>
+          <button class="copy" type="button" data-copy="${escapeAttr(cdnUrl(file.path))}">Copy link</button>
+          <button class="linkish" type="button" data-remove="${escapeAttr(file.path)}">Remove</button>
         </div>
       </div>
     </article>
@@ -138,8 +180,14 @@ function renderQueue() {
     let nameError = "";
     try { name = targetName(item.original, item.typed); }
     catch (error) { nameError = error.message; }
-    const exists = library.some((file) => file.name === name);
-    const url = nameError ? "" : cdnUrl(name);
+    let path = name;
+    let pathError = nameError;
+    if (!nameError) {
+      try { path = publishPath(name); }
+      catch (error) { pathError = error.message; }
+    }
+    const exists = library.some((file) => file.path === path);
+    const url = pathError ? "" : cdnUrl(path);
     return `
       <li>
         ${item.preview ? `<img alt="" src="${item.preview}">` : `<div class="file-tile">PDF</div>`}
@@ -150,18 +198,23 @@ function renderQueue() {
           </div>
           <input id="name-${item.id}" data-id="${item.id}" type="text" value="${escapeAttr(item.typed)}" placeholder="${escapeAttr(item.original)}">
           <p class="file-meta">${escapeHtml(item.original)} · ${formatSize(item.size)}</p>
-          ${nameError ? `<p class="warn">${escapeHtml(nameError)}</p>` : `<p class="url-preview">${escapeHtml(url)}</p>`}
+          ${pathError ? `<p class="warn">${escapeHtml(pathError)}</p>` : `<p class="url-preview">${escapeHtml(url)}</p>`}
           ${exists ? `<p class="warn">This filename is already in the library. The public link can show the old file for up to 12 hours.</p>` : ""}
         </div>
       </li>
     `;
   }).join("");
   const ready = queue.length && queue.every((item) => {
-    try { targetName(item.original, item.typed); return item.size <= MAX_BYTES; }
+    try { publishPath(targetName(item.original, item.typed)); return item.size <= MAX_BYTES; }
     catch { return false; }
   });
   publishBtn.disabled = publishing || !ready;
   publishBtn.textContent = queue.length > 1 ? `Publish ${queue.length} files` : "Publish";
+}
+
+function publishPath(filename) {
+  const folder = cleanFolder(folderInput.value);
+  return folder ? `${folder}/${filename}` : filename;
 }
 
 function fileThumb(name, src) {
@@ -254,7 +307,7 @@ async function publish() {
     }));
     const names = new Set(files.map((file) => file.path));
     if (names.size !== files.length) throw new Error("Two files would get the same filename.");
-    for (const file of files) await uploadFile(file.path, file.file);
+    for (const file of files) await uploadFile(publishPath(file.path), file.file);
     statusEl.textContent = files.length === 1 ? `Published ${files[0].path}` : `Published ${files.length} files`;
     queue.forEach((item) => { if (item.preview) URL.revokeObjectURL(item.preview); });
     queue = [];
@@ -344,5 +397,12 @@ async function copyText(value) {
   }
 }
 
+folderInput.addEventListener("input", renderQueue);
+foldersEl.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-folder]");
+  if (!button) return;
+  folderFilter = button.dataset.folder === "all" ? null : button.dataset.folder === "root" ? "" : button.dataset.folder;
+  renderLibrary();
+});
 search.addEventListener("input", renderLibrary);
 loadLibrary();

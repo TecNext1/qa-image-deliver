@@ -94,12 +94,20 @@ async function remove(path) {
 }
 
 function cleanName(name) {
-  if (typeof name !== "string" || !name || name === "." || name === ".." || /[\\/]/.test(name)) {
+  if (typeof name !== "string" || !name || name.includes("\\") || name.includes("..")) {
     throw new Error("Use a plain filename.");
   }
-  const ext = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : "";
-  if (!ALLOWED.has(ext) || BLOCKED.has(name.toLowerCase())) throw new Error("That file type is not allowed.");
-  return name;
+  const parts = name.split("/").filter(Boolean);
+  if (parts.length < 1 || parts.length > 2 || parts.some((part) => part === "." || part === "..")) {
+    throw new Error("Use one folder, or none.");
+  }
+  const file = parts[parts.length - 1];
+  const ext = file.includes(".") ? file.slice(file.lastIndexOf(".") + 1).toLowerCase() : "";
+  if (!ALLOWED.has(ext) || BLOCKED.has(file.toLowerCase())) throw new Error("That file type is not allowed.");
+  if (parts.length === 2 && ["site", "netlify", "scripts", ".github"].includes(parts[0].toLowerCase())) {
+    throw new Error("Pick another folder name.");
+  }
+  return parts.join("/");
 }
 
 async function commit(treeItems, message, attempt = 0) {

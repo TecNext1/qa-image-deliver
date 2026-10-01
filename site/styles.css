@@ -107,6 +107,35 @@ main {
   padding: 10px 14px;
 }
 
+.folders {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.folders:empty { display: none; }
+
+.folders button {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 999px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.folders button.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.card .folder-label {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .drop {
   display: grid;
   place-items: center;

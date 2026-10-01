@@ -29,6 +29,8 @@
         <span class="drop-title">Drop images or a PDF</span>
         <span class="drop-sub">or choose files</span>
       </label>
+      <label class="password-row" for="folder">Folder</label>
+      <input id="folder" type="text" placeholder="Optional. Blank keeps the current links" autocomplete="off">
       <ul class="queue" id="queue"></ul>
       <label class="password-row" for="password">Team password</label>
       <input id="password" type="password" autocomplete="current-password" placeholder="Asked once, kept in this browser">
@@ -44,8 +46,9 @@
           <h2>Library</h2>
           <p id="count"></p>
         </div>
-        <input id="search" type="search" placeholder="Search filenames" autocomplete="off">
+        <input id="search" type="search" placeholder="Filter by name" autocomplete="off">
       </div>
+      <div class="folders" id="folders"></div>
       <div class="grid" id="grid"></div>
     </section>
   </main>
