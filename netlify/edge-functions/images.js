@@ -2,6 +2,7 @@ const IMAGE = /\.(png|jpe?g|gif|webp|avif|svg|ico|bmp|tiff?|heic|heif|pdf)$/i;
 
 export default async (request, context) => {
   const url = new URL(request.url);
+  if (url.pathname === "/favicon.svg") return context.next();
   if (!IMAGE.test(url.pathname)) return context.next();
 
   let upstream;
