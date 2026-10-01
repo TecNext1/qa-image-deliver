@@ -20,10 +20,22 @@ const passwordInput = document.querySelector("#password");
 const folderInput = document.querySelector("#folder");
 const foldersEl = document.querySelector("#folders");
 
+const sortNew = document.querySelector("#sort-new");
+const sortName = document.querySelector("#sort-name");
+const sortType = document.querySelector("#sort-type");
+const selectShown = document.querySelector("#select-shown");
+const copySelected = document.querySelector("#copy-selected");
+const filtersEl = document.querySelector("#filters");
+
 let library = [];
 let queue = [];
 let publishing = false;
 let folderFilter = null;
+let sortMode = "new";
+let modelFilter = "";
+let typeFilter = "";
+let languageFilter = "";
+const selected = new Set();
 
 uploadNote.textContent = "Leave the folder blank and existing links stay the same.";
 passwordInput.value = sessionStorage.getItem("deliver-password") || "";
@@ -116,54 +128,123 @@ function bytesToBase64(bytes) {
 }
 
 async function loadLibrary() {
-  grid.innerHTML = `<p class="empty">Loading images…</p>`;
+  grid.innerHTML = `<p class="empty">Loading files…</p>`;
   try {
-    const tree = await gh(`/repos/${CFG.owner}/${CFG.repo}/git/trees/${encodeURIComponent(CFG.branch)}?recursive=1`);
-    library = (tree.tree || [])
-      .filter((entry) => entry.type === "blob" && ALLOWED.includes(extOf(entry.path)) && !/^(site|netlify|scripts)\//.test(entry.path))
-      .map((entry) => ({ ...entry, name: baseName(entry.path), folder: folderOf(entry.path) }))
-      .sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true }));
-  } catch (error) {
-    library = [];
-    grid.innerHTML = `<p class="empty">Could not load the library. ${error.message}</p>`;
-    return;
+    const response = await fetch("/api/library", { cache: "no-store" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Could not load the library.");
+    library = data.map(decorate);
+  } catch {
+    try {
+      const tree = await gh(`/repos/${CFG.owner}/${CFG.repo}/git/trees/${encodeURIComponent(CFG.branch)}?recursive=1`);
+      library = (tree.tree || [])
+        .filter((entry) => entry.type === "blob" && ALLOWED.includes(extOf(entry.path)) && !/^(site|netlify|scripts)\//.test(entry.path) && entry.path !== "redirects.json")
+        .map((entry) => decorate({ ...entry, date: "" }));
+    } catch (error) {
+      library = [];
+      grid.innerHTML = `<p class="empty">Could not load the library. ${error.message}</p>`;
+      return;
+    }
   }
   renderLibrary();
 }
 
+function decorate(entry) {
+  const name = baseName(entry.path);
+  const folder = folderOf(entry.path);
+  return { ...entry, name, folder, ...fileMeta(name) };
+}
+
+function fileMeta(name) {
+  const base = name.replace(/\.[^.]+$/, "").replace(/\s+$/, "");
+  let language = "";
+  if (/(^|[^a-z])(en|english)([^a-z]|$)/i.test(base)) language = "EN";
+  else if (/(^|[^a-z])(ar|arabic)([^a-z]|$)/i.test(base)) language = "AR";
+  let type = "";
+  if (/offer\s*2/i.test(base)) type = "Offer 2";
+  else if (/\boffer\b/i.test(base)) type = "Offer";
+  else if (/brochure/i.test(base)) type = "Brochure";
+  else if (/warranty/i.test(base)) type = "Warranty";
+  else if (/maintenance/i.test(base)) type = "Maintenance";
+  else if (/terms/i.test(base)) type = "Terms";
+  let model = base.split(/\s+-\s+/)[0].replace(/\s+(en|ar|english|arabic)$/i, "").trim();
+  if (/^(brochure|offer|warranty|maintenance|terms)/i.test(model)) model = "";
+  return { model, type, language };
+}
+
 function renderLibrary() {
-  const query = search.value.trim().toLowerCase();
+  const shown = visibleFiles();
   const folders = [...new Set(library.map((file) => file.folder).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   foldersEl.innerHTML = folders.length ? [
     { id: "all", label: "All" },
     { id: "root", label: "No folder" },
     ...folders.map((folder) => ({ id: folder, label: folder })),
   ].map((item) => `<button type="button" data-folder="${escapeAttr(item.id)}" class="${(item.id === "all" && folderFilter === null) || item.id === folderFilter || (item.id === "root" && folderFilter === "") ? "on" : ""}">${escapeHtml(item.label)}</button>`).join("") : "";
-  const shown = library.filter((file) => {
-    const nameMatch = file.name.toLowerCase().includes(query) || file.folder.toLowerCase().includes(query);
-    if (!nameMatch) return false;
-    if (folderFilter === null) return true;
-    return file.folder === folderFilter;
-  });
+  filtersEl.innerHTML = [
+    chipRow("Model", unique("model"), modelFilter, "model"),
+    chipRow("Type", unique("type"), typeFilter, "type"),
+    chipRow("Language", unique("language"), languageFilter, "language"),
+  ].join("");
+  sortNew.classList.toggle("on", sortMode === "new");
+  sortName.classList.toggle("on", sortMode === "name");
+  sortType.classList.toggle("on", sortMode === "type");
+  copySelected.disabled = selected.size === 0;
+  copySelected.textContent = selected.size ? `Copy ${selected.size} links` : "Copy links";
+  selectShown.textContent = shown.length && shown.every((file) => selected.has(file.path)) ? "Clear shown" : "Select shown";
   countEl.textContent = `${shown.length} of ${library.length} file${library.length === 1 ? "" : "s"}`;
   if (!shown.length) {
     grid.innerHTML = `<p class="empty">${library.length ? "Nothing matches." : "No files yet. Add one on the left."}</p>`;
     return;
   }
   grid.innerHTML = shown.map((file) => `
-    <article class="card" data-name="${escapeAttr(file.path)}">
+    <article class="card" draggable="true" data-name="${escapeAttr(file.path)}">
       ${fileThumb(file.name, previewUrl(file.path, file.sha))}
       <div class="card-body">
+        <label class="pick"><input type="checkbox" data-select="${escapeAttr(file.path)}" ${selected.has(file.path) ? "checked" : ""}> Select</label>
         ${file.folder ? `<p class="folder-label">${escapeHtml(file.folder)}</p>` : ""}
         <h3>${escapeHtml(file.name)}</h3>
         <p class="url-preview">${escapeHtml(cdnUrl(file.path))}</p>
         <div class="card-actions">
           <button class="copy" type="button" data-copy="${escapeAttr(cdnUrl(file.path))}">Copy link</button>
+          <a class="open" href="${escapeAttr(cdnUrl(file.path))}" target="_blank" rel="noopener">Open</a>
+          <button class="linkish" type="button" data-rename="${escapeAttr(file.path)}">Rename</button>
           <button class="linkish" type="button" data-remove="${escapeAttr(file.path)}">Remove</button>
         </div>
       </div>
     </article>
   `).join("");
+}
+
+function visibleFiles() {
+  const query = search.value.trim().toLowerCase();
+  const shown = library.filter((file) => {
+    const nameMatch = file.name.toLowerCase().includes(query) || file.folder.toLowerCase().includes(query) || file.model.toLowerCase().includes(query);
+    if (!nameMatch) return false;
+    if (folderFilter !== null && file.folder !== folderFilter) return false;
+    if (modelFilter && file.model !== modelFilter) return false;
+    if (typeFilter && file.type !== typeFilter) return false;
+    if (languageFilter && file.language !== languageFilter) return false;
+    return true;
+  });
+  shown.sort((a, b) => {
+    if (sortMode === "new" && a.date !== b.date) return (b.date || "").localeCompare(a.date || "");
+    if (sortMode === "type") {
+      const typeCmp = (a.type || "\uffff").localeCompare(b.type || "\uffff");
+      if (typeCmp) return typeCmp;
+    }
+    return a.name.localeCompare(b.name, undefined, { numeric: true });
+  });
+  return shown;
+}
+
+function unique(key) {
+  return [...new Set(library.map((file) => file[key]).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+}
+
+function chipRow(label, values, current, kind) {
+  if (values.length < 2) return "";
+  const chips = [{ id: "", label: "All" }, ...values.map((value) => ({ id: value, label: value }))];
+  return `<div class="chip-row"><span>${label}</span>${chips.map((item) => `<button type="button" data-kind="${kind}" data-value="${escapeAttr(item.id)}" class="${item.id === current ? "on" : ""}">${escapeHtml(item.label)}</button>`).join("")}</div>`;
 }
 
 function escapeHtml(value) {
@@ -349,6 +430,37 @@ async function uploadFile(path, file) {
 }
 
 grid.addEventListener("click", async (event) => {
+  const rename = event.target.closest("[data-rename]");
+  if (rename) {
+    const card = rename.closest(".card");
+    const input = card.querySelector(".rename-input");
+    if (!input) {
+      const field = document.createElement("input");
+      field.className = "rename-input";
+      field.value = baseName(rename.dataset.rename);
+      card.querySelector("h3").replaceWith(field);
+      rename.textContent = "Save";
+      field.focus();
+      return;
+    }
+    if (!passwordInput.value) {
+      statusEl.textContent = "Enter the team password.";
+      return;
+    }
+    const next = folderOf(rename.dataset.rename)
+      ? `${folderOf(rename.dataset.rename)}/${targetName(baseName(rename.dataset.rename), input.value)}`
+      : targetName(baseName(rename.dataset.rename), input.value);
+    statusEl.textContent = `Renaming ${baseName(rename.dataset.rename)}…`;
+    try {
+      await api({ action: "rename", from: rename.dataset.rename, to: next });
+      statusEl.textContent = `Renamed. The old link still opens this file.`;
+      selected.delete(rename.dataset.rename);
+      await loadLibrary();
+    } catch (error) {
+      statusEl.textContent = error.message;
+    }
+    return;
+  }
   const copy = event.target.closest("[data-copy]");
   if (copy) {
     const ok = await copyText(copy.dataset.copy);
@@ -396,6 +508,102 @@ async function copyText(value) {
     return ok;
   }
 }
+
+grid.addEventListener("change", (event) => {
+  const box = event.target.closest("[data-select]");
+  if (!box) return;
+  if (box.checked) selected.add(box.dataset.select);
+  else selected.delete(box.dataset.select);
+  copySelected.disabled = selected.size === 0;
+  copySelected.textContent = selected.size ? `Copy ${selected.size} links` : "Copy links";
+  const shown = visibleFiles();
+  selectShown.textContent = shown.length && shown.every((file) => selected.has(file.path)) ? "Clear shown" : "Select shown";
+});
+
+sortNew.addEventListener("click", () => { sortMode = "new"; renderLibrary(); });
+sortName.addEventListener("click", () => { sortMode = "name"; renderLibrary(); });
+sortType.addEventListener("click", () => { sortMode = "type"; renderLibrary(); });
+
+grid.addEventListener("dragstart", (event) => {
+  const card = event.target.closest(".card");
+  if (!card || event.target.closest("button, a, input, label")) {
+    event.preventDefault();
+    return;
+  }
+  const path = card.dataset.name;
+  const paths = selected.has(path) && selected.size > 1 ? [...selected] : [path];
+  event.dataTransfer.setData("text/plain", JSON.stringify(paths));
+  event.dataTransfer.effectAllowed = "move";
+});
+
+foldersEl.addEventListener("dragover", (event) => {
+  const button = event.target.closest("[data-folder]");
+  if (!button || button.dataset.folder === "all") return;
+  event.preventDefault();
+  button.classList.add("hot");
+});
+foldersEl.addEventListener("dragleave", (event) => {
+  const button = event.target.closest("[data-folder]");
+  if (button) button.classList.remove("hot");
+});
+foldersEl.addEventListener("drop", async (event) => {
+  const button = event.target.closest("[data-folder]");
+  if (!button || button.dataset.folder === "all") return;
+  event.preventDefault();
+  button.classList.remove("hot");
+  const folder = button.dataset.folder === "root" ? "" : button.dataset.folder;
+  if (event.dataTransfer.files && event.dataTransfer.files.length) {
+    folderInput.value = folder;
+    addFiles(event.dataTransfer.files);
+    statusEl.textContent = folder ? `These files will publish in ${folder}.` : "These files will publish with no folder.";
+    renderQueue();
+    return;
+  }
+  let paths = [];
+  try { paths = JSON.parse(event.dataTransfer.getData("text/plain")); } catch { paths = []; }
+  if (!Array.isArray(paths) || !paths.length) return;
+  if (!passwordInput.value) {
+    statusEl.textContent = "Enter the team password.";
+    return;
+  }
+  statusEl.textContent = "Moving…";
+  try {
+    for (const path of paths) {
+      const next = folder ? `${folder}/${baseName(path)}` : baseName(path);
+      if (next === path) continue;
+      await api({ action: "rename", from: path, to: next });
+      selected.delete(path);
+    }
+    statusEl.textContent = "Moved. The old link still opens the file.";
+    await loadLibrary();
+  } catch (error) {
+    statusEl.textContent = error.message;
+  }
+});
+selectShown.addEventListener("click", () => {
+  const shown = visibleFiles();
+  const allOn = shown.length && shown.every((file) => selected.has(file.path));
+  for (const file of shown) {
+    if (allOn) selected.delete(file.path);
+    else selected.add(file.path);
+  }
+  renderLibrary();
+});
+copySelected.addEventListener("click", async () => {
+  const links = [...selected].map((path) => cdnUrl(path)).join("\n");
+  const ok = await copyText(links);
+  copySelected.textContent = ok ? "Copied" : "Copy failed";
+  setTimeout(renderLibrary, 1600);
+});
+filtersEl.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-kind]");
+  if (!button) return;
+  const value = button.dataset.value;
+  if (button.dataset.kind === "model") modelFilter = value;
+  if (button.dataset.kind === "type") typeFilter = value;
+  if (button.dataset.kind === "language") languageFilter = value;
+  renderLibrary();
+});
 
 folderInput.addEventListener("input", renderQueue);
 foldersEl.addEventListener("click", (event) => {

@@ -114,6 +114,22 @@ main {
   margin-bottom: 14px;
 }
 
+.library-tools, .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; align-items: center; }
+.library-tools button, .chip-row button {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 999px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.library-tools button.on, .chip-row button.on { background: var(--accent); border-color: var(--accent); color: white; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; width: 100%; }
+.chip-row span { color: var(--muted); font-size: 12px; min-width: 72px; }
+.filters:empty { display: none; }
+.pick { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.rename-input { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+a.open { color: var(--muted); font-size: 13px; }
+
 .folders:empty { display: none; }
 
 .folders button {
@@ -124,11 +140,14 @@ main {
   cursor: pointer;
 }
 
-.folders button.on {
+.folders button.on,
+.folders button.hot {
   background: var(--accent);
   border-color: var(--accent);
   color: white;
 }
+
+.card { cursor: grab; }
 
 .card .folder-label {
   margin: 0;

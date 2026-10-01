@@ -6,7 +6,7 @@ export default async (request, context) => {
 
   let upstream;
   try {
-    const encodedPath = url.pathname.split("/").map((part) => encodeURIComponent(decodeURIComponent(part))).join("/");
+    const encodedPath = await resolvePath(url.pathname);
     upstream = await fetch(
       "https://cdn.jsdelivr.net/gh/TecNext1/qa-image-deliver@main" + encodedPath
     );
@@ -25,6 +25,34 @@ export default async (request, context) => {
   headers.set("access-control-allow-origin", "*");
   return new Response(upstream.body, { status: 200, headers });
 };
+
+async function resolvePath(pathname) {
+  const decoded = pathname.split("/").map((part) => {
+    try { return decodeURIComponent(part); } catch { return part; }
+  }).join("/").replace(/^\//, "");
+  const map = await loadRedirects();
+  let next = map[decoded];
+  const seen = new Set([decoded]);
+  while (next && !seen.has(next)) {
+    seen.add(next);
+    if (!map[next]) break;
+    next = map[next];
+  }
+  const target = next || decoded;
+  return `/${target.split("/").map((part) => encodeURIComponent(part)).join("/")}`;
+}
+
+async function loadRedirects() {
+  const cacheKey = new Request("https://image-deliver.netlify.app/__redirects.json");
+  const hit = await caches.default.match(cacheKey);
+  if (hit) return hit.json();
+  const response = await fetch("https://raw.githubusercontent.com/TecNext1/qa-image-deliver/main/redirects.json");
+  const map = response.ok ? await response.json() : {};
+  await caches.default.put(cacheKey, new Response(JSON.stringify(map), {
+    headers: { "content-type": "application/json", "cache-control": "public, max-age=30" },
+  }));
+  return map;
+}
 
 function notFound(pathname) {
   const name = escapeHtml(decodeURIComponent(pathname.split("/").pop() || "This file"));

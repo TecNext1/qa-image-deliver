@@ -23,6 +23,7 @@ export default async (request) => {
     if (body.action === "chunk") return json(200, await saveChunk(body));
     if (body.action === "finish") return json(200, await finish(body));
     if (body.action === "delete") return json(200, await remove(body.path));
+    if (body.action === "rename") return json(200, await rename(body.from, body.to));
     return json(400, { error: "Unknown action." });
   } catch (error) {
     return json(400, { error: error.message || "Upload failed." });
@@ -93,6 +94,42 @@ async function remove(path) {
   return { ok: true };
 }
 
+async function rename(from, to) {
+  const source = cleanName(from);
+  const target = cleanName(to);
+  if (source === target) return { ok: true, path: target };
+  const tree = await gh(`/repos/${OWNER}/${REPO}/git/trees/${encodeURIComponent(BRANCH)}?recursive=1`);
+  const entries = tree.tree || [];
+  const file = entries.find((entry) => entry.type === "blob" && entry.path === source);
+  if (!file) throw new Error("That file is no longer there.");
+  if (entries.some((entry) => entry.path === target)) throw new Error("That filename is already used.");
+
+  const redirects = await readRedirects(entries);
+  for (const [oldPath, dest] of Object.entries(redirects)) {
+    if (dest === source) redirects[oldPath] = target;
+  }
+  redirects[source] = target;
+  const redirectBlob = await gh(`/repos/${OWNER}/${REPO}/git/blobs`, {
+    method: "POST",
+    body: { content: Buffer.from(JSON.stringify(redirects, null, 2)).toString("base64"), encoding: "base64" },
+  });
+  await commit([
+    { path: target, sha: file.sha },
+    { path: source, sha: null },
+    { path: "redirects.json", sha: redirectBlob.sha },
+  ], `Rename ${source} to ${target}`);
+  return { ok: true, path: target };
+}
+
+async function readRedirects(entries) {
+  const entry = entries.find((item) => item.path === "redirects.json");
+  if (!entry) return {};
+  const blob = await gh(`/repos/${OWNER}/${REPO}/git/blobs/${entry.sha}`);
+  const text = Buffer.from(blob.content, "base64").toString("utf8");
+  const parsed = JSON.parse(text);
+  return parsed && typeof parsed === "object" ? parsed : {};
+}
+
 function cleanName(name) {
   if (typeof name !== "string" || !name || name.includes("\\") || name.includes("..")) {
     throw new Error("Use a plain filename.");
@@ -139,6 +176,7 @@ async function commit(treeItems, message, attempt = 0) {
     }
     throw error;
   }
+  await getStore({ name: "library", consistency: "strong" }).delete("index").catch(() => {});
 }
 
 async function gh(path, options = {}) {
