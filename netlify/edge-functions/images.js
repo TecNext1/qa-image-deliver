@@ -78,6 +78,7 @@ function notFound(pathname) {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>File not found</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <style>
     body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f3efe7; color: #1e1a16; font-family: Georgia, serif; }
     main { text-align: center; padding: 24px; }
