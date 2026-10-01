@@ -46,17 +46,21 @@
           <h2>Library</h2>
           <p id="count"></p>
         </div>
-        <input id="search" type="search" placeholder="Filter by name" autocomplete="off">
+        <input id="search" type="search" placeholder="Search files" autocomplete="off">
       </div>
-      <div class="library-tools">
-        <button type="button" id="sort-new" class="on">Newest</button>
-        <button type="button" id="sort-name">Name</button>
-        <button type="button" id="sort-type">Type</button>
-        <button type="button" id="select-shown">Select shown</button>
-        <button type="button" id="copy-selected" disabled>Copy links</button>
+      <div class="library-bar">
+        <div class="sorts" role="group" aria-label="Sort">
+          <button type="button" id="sort-new" class="on">Newest</button>
+          <button type="button" id="sort-name">Name</button>
+          <button type="button" id="sort-type">Type</button>
+        </div>
+        <div class="filters" id="filters"></div>
+        <div class="tool-actions">
+          <button type="button" id="select-shown">Select shown</button>
+          <button type="button" id="copy-selected" disabled>Copy links</button>
+        </div>
       </div>
       <div class="folders" id="folders"></div>
-      <div class="filters" id="filters"></div>
       <div class="grid" id="grid"></div>
     </section>
   </main>

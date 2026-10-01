@@ -181,9 +181,9 @@ function renderLibrary() {
     ...folders.map((folder) => ({ id: folder, label: folder })),
   ].map((item) => `<button type="button" data-folder="${escapeAttr(item.id)}" class="${(item.id === "all" && folderFilter === null) || item.id === folderFilter || (item.id === "root" && folderFilter === "") ? "on" : ""}">${escapeHtml(item.label)}</button>`).join("") : "";
   filtersEl.innerHTML = [
-    chipRow("Model", unique("model"), modelFilter, "model"),
-    chipRow("Type", unique("type"), typeFilter, "type"),
-    chipRow("Language", unique("language"), languageFilter, "language"),
+    filterField("Model", unique("model"), modelFilter, "model"),
+    filterField("Type", unique("type"), typeFilter, "type"),
+    filterField("Language", unique("language"), languageFilter, "language"),
   ].join("");
   sortNew.classList.toggle("on", sortMode === "new");
   sortName.classList.toggle("on", sortMode === "name");
@@ -196,23 +196,31 @@ function renderLibrary() {
     grid.innerHTML = `<p class="empty">${library.length ? "Nothing matches." : "No files yet. Add one on the left."}</p>`;
     return;
   }
-  grid.innerHTML = shown.map((file) => `
-    <article class="card" draggable="true" data-name="${escapeAttr(file.path)}">
-      ${fileThumb(file.name, previewUrl(file.path, file.sha))}
+  grid.innerHTML = shown.map((file) => {
+    const badges = [file.type, file.language].filter(Boolean);
+    const link = cdnUrl(file.path);
+    return `
+    <article class="card${selected.has(file.path) ? " is-on" : ""}" draggable="true" data-name="${escapeAttr(file.path)}">
+      <div class="thumb">
+        <label class="pick"><input type="checkbox" data-select="${escapeAttr(file.path)}" aria-label="Select ${escapeAttr(file.name)}" ${selected.has(file.path) ? "checked" : ""}></label>
+        ${badges.length ? `<div class="badges">${badges.map((badge) => `<span class="badge">${escapeHtml(badge)}</span>`).join("")}</div>` : ""}
+        ${fileThumb(file.name, previewUrl(file.path, file.sha))}
+      </div>
       <div class="card-body">
-        <label class="pick"><input type="checkbox" data-select="${escapeAttr(file.path)}" ${selected.has(file.path) ? "checked" : ""}> Select</label>
         ${file.folder ? `<p class="folder-label">${escapeHtml(file.folder)}</p>` : ""}
-        <h3>${escapeHtml(file.name)}</h3>
-        <p class="url-preview">${escapeHtml(cdnUrl(file.path))}</p>
+        <h3 title="${escapeAttr(file.name)}">${escapeHtml(file.name)}</h3>
         <div class="card-actions">
-          <button class="copy" type="button" data-copy="${escapeAttr(cdnUrl(file.path))}">Copy link</button>
-          <a class="open" href="${escapeAttr(cdnUrl(file.path))}" target="_blank" rel="noopener">Open</a>
+          <button class="copy" type="button" data-copy="${escapeAttr(link)}" title="${escapeAttr(link)}">Copy link</button>
+          <a class="open" href="${escapeAttr(link)}" target="_blank" rel="noopener">Open</a>
+        </div>
+        <div class="card-more">
           <button class="linkish" type="button" data-rename="${escapeAttr(file.path)}">Rename</button>
           <button class="linkish" type="button" data-remove="${escapeAttr(file.path)}">Remove</button>
         </div>
       </div>
     </article>
-  `).join("");
+  `;
+  }).join("");
 }
 
 function visibleFiles() {
@@ -241,10 +249,10 @@ function unique(key) {
   return [...new Set(library.map((file) => file[key]).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 }
 
-function chipRow(label, values, current, kind) {
+function filterField(label, values, current, kind) {
   if (values.length < 2) return "";
-  const chips = [{ id: "", label: "All" }, ...values.map((value) => ({ id: value, label: value }))];
-  return `<div class="chip-row"><span>${label}</span>${chips.map((item) => `<button type="button" data-kind="${kind}" data-value="${escapeAttr(item.id)}" class="${item.id === current ? "on" : ""}">${escapeHtml(item.label)}</button>`).join("")}</div>`;
+  const options = [`<option value="">All</option>`, ...values.map((value) => `<option value="${escapeAttr(value)}"${value === current ? " selected" : ""}>${escapeHtml(value)}</option>`)].join("");
+  return `<label class="filter-field"><span>${escapeHtml(label)}</span><select data-kind="${kind}">${options}</select></label>`;
 }
 
 function escapeHtml(value) {
@@ -514,6 +522,7 @@ grid.addEventListener("change", (event) => {
   if (!box) return;
   if (box.checked) selected.add(box.dataset.select);
   else selected.delete(box.dataset.select);
+  box.closest(".card")?.classList.toggle("is-on", box.checked);
   copySelected.disabled = selected.size === 0;
   copySelected.textContent = selected.size ? `Copy ${selected.size} links` : "Copy links";
   const shown = visibleFiles();
@@ -595,13 +604,12 @@ copySelected.addEventListener("click", async () => {
   copySelected.textContent = ok ? "Copied" : "Copy failed";
   setTimeout(renderLibrary, 1600);
 });
-filtersEl.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-kind]");
-  if (!button) return;
-  const value = button.dataset.value;
-  if (button.dataset.kind === "model") modelFilter = value;
-  if (button.dataset.kind === "type") typeFilter = value;
-  if (button.dataset.kind === "language") languageFilter = value;
+filtersEl.addEventListener("change", (event) => {
+  const field = event.target.closest("select[data-kind]");
+  if (!field) return;
+  if (field.dataset.kind === "model") modelFilter = field.value;
+  if (field.dataset.kind === "type") typeFilter = field.value;
+  if (field.dataset.kind === "language") languageFilter = field.value;
   renderLibrary();
 });
 
