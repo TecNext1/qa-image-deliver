@@ -7,12 +7,12 @@ export default async (request, context) => {
   let upstream;
   try {
     const encodedPath = await resolvePath(url.pathname);
-    upstream = await fetch(
-      "https://cdn.jsdelivr.net/gh/TecNext1/qa-image-deliver@main" + encodedPath
-    );
+    upstream = await fetchFile(encodedPath);
   } catch {
     return notFound(url.pathname);
   }
+
+  if (!upstream) return notFound(url.pathname);
 
   const type = upstream.headers.get("content-type") || "";
   if (!upstream.ok || /text\/html/i.test(type)) return notFound(url.pathname);
@@ -42,16 +42,31 @@ async function resolvePath(pathname) {
   return `/${target.split("/").map((part) => encodeURIComponent(part)).join("/")}`;
 }
 
+async function fetchFile(encodedPath) {
+  const sources = [
+    "https://cdn.jsdelivr.net/gh/TecNext1/qa-image-deliver@main" + encodedPath,
+    "https://raw.githubusercontent.com/TecNext1/qa-image-deliver/main" + encodedPath,
+  ];
+  for (const source of sources) {
+    try {
+      const upstream = await fetch(source);
+      const type = upstream.headers.get("content-type") || "";
+      if (upstream.ok && !/text\/html/i.test(type)) return upstream;
+    } catch {
+      /* try the next source */
+    }
+  }
+  return null;
+}
 async function loadRedirects() {
-  const cacheKey = new Request("https://image-deliver.netlify.app/__redirects.json");
-  const hit = await caches.default.match(cacheKey);
-  if (hit) return hit.json();
-  const response = await fetch("https://raw.githubusercontent.com/TecNext1/qa-image-deliver/main/redirects.json");
-  const map = response.ok ? await response.json() : {};
-  await caches.default.put(cacheKey, new Response(JSON.stringify(map), {
-    headers: { "content-type": "application/json", "cache-control": "public, max-age=30" },
-  }));
-  return map;
+  try {
+    const response = await fetch("https://raw.githubusercontent.com/TecNext1/qa-image-deliver/main/redirects.json");
+    if (!response.ok) return {};
+    const map = await response.json();
+    return map && typeof map === "object" && !Array.isArray(map) ? map : {};
+  } catch {
+    return {};
+  }
 }
 
 function notFound(pathname) {
