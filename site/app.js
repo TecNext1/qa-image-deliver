@@ -199,11 +199,11 @@ function renderLibrary() {
     : [];
   foldersEl.innerHTML = folders.map((name) => {
     const count = library.filter((file) => file.folder === name).length;
-    return `<button type="button" class="folder-card" data-open="${escapeAttr(name)}" data-drop-folder="${escapeAttr(name)}">
+    return `<div class="folder-card" role="button" tabindex="0" data-open="${escapeAttr(name)}" data-drop-folder="${escapeAttr(name)}">
       <span class="folder-glyph" aria-hidden="true"></span>
       <span class="folder-card-name">${escapeHtml(name)}</span>
       <span class="folder-card-count">${count} file${count === 1 ? "" : "s"}</span>
-    </button>`;
+    </div>`;
   }).join("");
   foldersEl.hidden = folders.length === 0;
   folderBack.hidden = currentFolder === null;
@@ -838,51 +838,291 @@ newFolderForm.addEventListener("submit", async (event) => {
   }
 });
 foldersEl.addEventListener("click", (event) => {
+  if (event.target.closest("input") || folderRenameLock) return;
   const button = event.target.closest("[data-open]");
   if (!button) return;
   currentFolder = button.dataset.open;
   renderLibrary();
 });
+foldersEl.addEventListener("keydown", (event) => {
+  if (event.target.closest("input")) return;
+  if (event.key !== "Enter" && event.key !== " ") return;
+  const button = event.target.closest("[data-open]");
+  if (!button || event.target !== button) return;
+  event.preventDefault();
+  currentFolder = button.dataset.open;
+  renderLibrary();
+});
+
+function rememberFolders() {
+  sessionStorage.setItem("deliver-folders", JSON.stringify([...extraFolders]));
+}
+
+function filesInFolder(name) {
+  return library.filter((file) => file.folder === name);
+}
+
+let folderRenameLock = false;
+
+function beginFolderRename(name) {
+  const card = foldersEl.querySelector(`[data-open="${CSS.escape(name)}"]`);
+  const label = card?.querySelector(".folder-card-name");
+  if (!label) return;
+  const field = document.createElement("input");
+  field.className = "rename-input";
+  field.value = name;
+  field.setAttribute("aria-label", `Rename ${name}`);
+  field.addEventListener("click", (event) => event.stopPropagation());
+  field.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      field.dataset.skip = "1";
+      renderLibrary();
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      field.blur();
+    }
+  });
+  field.addEventListener("blur", () => {
+    if (field.dataset.skip === "1") return;
+    commitFolderRename(name, field.value);
+  });
+  label.replaceWith(field);
+  field.focus();
+  field.select();
+}
+
+async function commitFolderRename(from, typed) {
+  if (folderRenameLock) return;
+  folderRenameLock = true;
+  try {
+    await renameFolder(from, typed);
+  } finally {
+    folderRenameLock = false;
+  }
+}
+
+async function renameFolder(from, typed) {
+  let to = "";
+  try { to = cleanFolder(typed); }
+  catch (error) {
+    statusEl.textContent = error.message;
+    renderLibrary();
+    return;
+  }
+  if (!to || to === from) {
+    renderLibrary();
+    return;
+  }
+  if (folderNames().some((name) => name !== from && name.toLowerCase() === to.toLowerCase())) {
+    statusEl.textContent = "A folder with that name already exists.";
+    renderLibrary();
+    return;
+  }
+  const paths = filesInFolder(from).map((file) => file.path);
+  extraFolders.delete(from);
+  extraFolders.add(to);
+  rememberFolders();
+  if (currentFolder === from) currentFolder = to;
+  if (folderInput.value === from) folderInput.value = to;
+  if (!paths.length) {
+    statusEl.textContent = `Renamed to ${to}.`;
+    renderLibrary();
+    return;
+  }
+  if (!passwordInput.value) {
+    extraFolders.delete(to);
+    extraFolders.add(from);
+    rememberFolders();
+    if (currentFolder === to) currentFolder = from;
+    if (folderInput.value === to) folderInput.value = from;
+    statusEl.textContent = "Enter the team password.";
+    renderLibrary();
+    return;
+  }
+  try {
+    await moveFiles(paths, to);
+    statusEl.textContent = `Renamed to ${to}. The old links still open the files.`;
+    renderLibrary();
+  } catch (error) {
+    statusEl.textContent = error.message;
+    await loadLibrary();
+    if (!filesInFolder(to).length) {
+      extraFolders.delete(to);
+      extraFolders.add(from);
+      rememberFolders();
+      if (currentFolder === to) currentFolder = from;
+      if (folderInput.value === to) folderInput.value = from;
+      renderLibrary();
+    }
+  }
+}
+
+async function deleteFolder(name) {
+  const paths = filesInFolder(name).map((file) => file.path);
+  if (!paths.length) {
+    extraFolders.delete(name);
+    rememberFolders();
+    if (currentFolder === name) currentFolder = null;
+    if (folderInput.value === name) folderInput.value = "";
+    statusEl.textContent = `Removed ${name}.`;
+    renderLibrary();
+    return;
+  }
+  if (!passwordInput.value) {
+    statusEl.textContent = "Enter the team password.";
+    return;
+  }
+  statusEl.textContent = `Removing ${name}…`;
+  try {
+    for (const path of paths) await api({ action: "delete", path });
+    extraFolders.delete(name);
+    rememberFolders();
+    if (currentFolder === name) currentFolder = null;
+    if (folderInput.value === name) folderInput.value = "";
+    statusEl.textContent = `Removed ${name} and ${paths.length} file${paths.length === 1 ? "" : "s"}.`;
+    await loadLibrary();
+  } catch (error) {
+    statusEl.textContent = error.message;
+    await loadLibrary();
+  }
+}
+
+async function removeFiles(paths) {
+  if (!passwordInput.value) {
+    statusEl.textContent = "Enter the team password.";
+    return;
+  }
+  statusEl.textContent = paths.length > 1 ? `Removing ${paths.length} files…` : `Removing ${paths[0]}…`;
+  try {
+    for (const path of paths) {
+      await api({ action: "delete", path });
+      selected.delete(path);
+    }
+    statusEl.textContent = paths.length > 1 ? `Removed ${paths.length} files.` : `Removed ${paths[0]}`;
+    await loadLibrary();
+  } catch (error) {
+    statusEl.textContent = error.message;
+    await loadLibrary();
+  }
+}
 
 function closeMenu() {
   menu.hidden = true;
   menu.innerHTML = "";
+  delete menu.dataset.kind;
+  delete menu.dataset.folder;
+  delete menu.dataset.paths;
+  document.querySelectorAll(".is-menu-target").forEach((item) => item.classList.remove("is-menu-target"));
 }
 
-function openMenu(event, card) {
+function placeMenu(event) {
+  menu.hidden = false;
+  const margin = 8;
+  const rect = menu.getBoundingClientRect();
+  const left = Math.max(margin, Math.min(event.clientX, window.innerWidth - rect.width - margin));
+  const top = Math.max(margin, Math.min(event.clientY, window.innerHeight - rect.height - margin));
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+}
+
+function fillMenu(title, meta, sections) {
+  menu.innerHTML = [
+    `<div class="menu-head"><p class="menu-title">${escapeHtml(title)}</p>${meta ? `<p class="menu-meta">${escapeHtml(meta)}</p>` : ""}</div>`,
+    ...sections.filter(Boolean).map((section) => `<div class="menu-rule"></div>${section}`),
+  ].join("");
+}
+
+function openFileMenu(event, card) {
   const path = card.dataset.name;
   const paths = selected.has(path) && selected.size > 1 ? [...selected] : [path];
   const destinations = folderNames().filter((name) => paths.some((item) => folderOf(item) !== name));
-  menu.innerHTML = [
-    `<button type="button" data-act="open">Open</button>`,
-    `<button type="button" data-act="copy">Copy link</button>`,
-    `<p class="menu-label">Move to</p>`,
+  const canLeave = paths.some((item) => folderOf(item));
+  const moveItems = [
     ...destinations.map((name) => `<button type="button" data-act="move" data-dest="${escapeAttr(name)}">${escapeHtml(name)}</button>`),
-    paths.some((item) => folderOf(item)) ? `<button type="button" data-act="move" data-dest="">Library</button>` : "",
-    `<button type="button" data-act="rename">Rename</button>`,
-    `<button type="button" data-act="remove">Remove</button>`,
-  ].join("");
+    canLeave ? `<button type="button" data-act="move" data-dest="">Library</button>` : "",
+  ].filter(Boolean);
+  const many = paths.length > 1;
+  fillMenu(
+    many ? `${paths.length} files` : baseName(path),
+    many ? "Actions apply to the selection" : (folderOf(path) || "Library"),
+    [
+      [
+        many ? "" : `<button type="button" data-act="open">Open</button>`,
+        `<button type="button" data-act="copy">${many ? "Copy links" : "Copy link"}</button>`,
+      ].join(""),
+      moveItems.length ? `<p class="menu-label">Move to</p>${moveItems.join("")}` : "",
+      [
+        many ? "" : `<button type="button" data-act="rename">Rename</button>`,
+        `<button type="button" class="danger" data-act="remove">${many ? `Remove ${paths.length} files` : "Remove"}</button>`,
+      ].join(""),
+    ],
+  );
+  menu.dataset.kind = "file";
   menu.dataset.paths = JSON.stringify(paths);
-  menu.hidden = false;
-  const width = 220;
-  const left = Math.max(8, Math.min(event.clientX, window.innerWidth - width - 8));
-  const top = Math.max(8, Math.min(event.clientY, window.innerHeight - 12));
-  menu.style.left = `${left}px`;
-  menu.style.top = `${top}px`;
-  const overflow = menu.getBoundingClientRect().bottom - window.innerHeight;
-  if (overflow > 0) menu.style.top = `${Math.max(8, top - overflow - 8)}px`;
+  document.querySelectorAll(".is-menu-target").forEach((item) => item.classList.remove("is-menu-target"));
+  for (const item of paths) {
+    grid.querySelector(`.card[data-name="${CSS.escape(item)}"]`)?.classList.add("is-menu-target");
+  }
+  placeMenu(event);
+}
+
+function openFolderMenu(event, name) {
+  const count = filesInFolder(name).length;
+  fillMenu(name, count ? `${count} file${count === 1 ? "" : "s"}` : "Empty folder", [
+    `<button type="button" data-act="open">Open</button>`,
+    `<button type="button" data-act="rename">Rename</button><button type="button" class="danger" data-act="delete">Delete</button>`,
+  ]);
+  menu.dataset.kind = "folder";
+  menu.dataset.folder = name;
+  document.querySelectorAll(".is-menu-target").forEach((item) => item.classList.remove("is-menu-target"));
+  foldersEl.querySelector(`[data-open="${CSS.escape(name)}"]`)?.classList.add("is-menu-target");
+  placeMenu(event);
 }
 
 grid.addEventListener("contextmenu", (event) => {
   const card = event.target.closest(".card");
   if (!card) return;
   event.preventDefault();
-  openMenu(event, card);
+  openFileMenu(event, card);
 });
+
+foldersEl.addEventListener("contextmenu", (event) => {
+  const card = event.target.closest(".folder-card");
+  if (!card) return;
+  event.preventDefault();
+  openFolderMenu(event, card.dataset.open);
+});
+
+menu.addEventListener("contextmenu", (event) => event.preventDefault());
 
 menu.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-act]");
   if (!button) return;
+  if (menu.dataset.kind === "folder") {
+    const name = menu.dataset.folder;
+    const action = button.dataset.act;
+    if (action === "delete") {
+      const count = filesInFolder(name).length;
+      if (count && button.dataset.armed !== "1") {
+        button.dataset.armed = "1";
+        button.classList.add("armed");
+        button.textContent = `Delete ${count} file${count === 1 ? "" : "s"}`;
+        return;
+      }
+      closeMenu();
+      await deleteFolder(name);
+      return;
+    }
+    closeMenu();
+    if (action === "open") {
+      currentFolder = name;
+      renderLibrary();
+    }
+    if (action === "rename") beginFolderRename(name);
+    return;
+  }
   const paths = JSON.parse(menu.dataset.paths || "[]");
   const path = paths[0];
   const action = button.dataset.act;
@@ -896,6 +1136,17 @@ menu.addEventListener("click", async (event) => {
     }
     return;
   }
+  if (action === "remove") {
+    if (button.dataset.armed !== "1") {
+      button.dataset.armed = "1";
+      button.classList.add("armed");
+      button.textContent = paths.length > 1 ? `Remove ${paths.length} files` : "Confirm remove";
+      return;
+    }
+    closeMenu();
+    await removeFiles(paths);
+    return;
+  }
   closeMenu();
   const card = grid.querySelector(`.card[data-name="${CSS.escape(path)}"]`);
   if (action === "open") window.open(cdnUrl(path), "_blank", "noopener");
@@ -904,7 +1155,6 @@ menu.addEventListener("click", async (event) => {
     statusEl.textContent = ok ? "Copied." : "Copy failed.";
   }
   if (action === "rename") card?.querySelector("[data-rename]")?.click();
-  if (action === "remove") card?.querySelector("[data-remove]")?.click();
 });
 
 document.addEventListener("click", (event) => {
