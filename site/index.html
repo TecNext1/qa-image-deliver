@@ -44,34 +44,44 @@
     <section class="panel library">
       <div class="panel-head library-head">
         <div>
-          <h2>Library</h2>
+          <button type="button" id="folder-back" class="back" hidden>Library</button>
+          <h2 id="library-title">Library</h2>
           <p id="count"></p>
         </div>
         <input id="search" type="search" placeholder="Search files" autocomplete="off">
       </div>
       <div class="library-bar">
-        <div class="sorts" role="group" aria-label="Sort">
-          <button type="button" id="sort-new" class="on">Newest</button>
-          <button type="button" id="sort-name">Name</button>
-          <button type="button" id="sort-type">Type</button>
-        </div>
-        <div class="filters" id="filters"></div>
-        <div class="tool-actions">
-          <button type="button" id="select-mode">Select</button>
-          <button type="button" id="select-shown" class="select-only">Select shown</button>
-          <button type="button" id="copy-selected" class="select-only" disabled>Copy links</button>
-        </div>
-      </div>
-      <div class="folder-row">
-        <div class="folders" id="folders"></div>
+        <label class="filter-field">
+          <span>Sort</span>
+          <select id="sort-mode" aria-label="Sort">
+            <option value="new">Newest</option>
+            <option value="name">Name</option>
+            <option value="type">Type</option>
+          </select>
+        </label>
+        <button type="button" id="filter-toggle">Filter</button>
         <form class="new-folder" id="new-folder">
           <button type="button" id="new-folder-open">New folder</button>
           <input id="new-folder-name" type="text" placeholder="Folder name" autocomplete="off" hidden>
           <button type="submit" id="new-folder-save" hidden>Create</button>
         </form>
+        <div class="tool-actions">
+          <button type="button" id="select-mode">Select</button>
+          <button type="button" id="select-shown" class="select-only">Select shown</button>
+          <label class="filter-field select-only" id="move-wrap">
+            <span>Move to</span>
+            <select id="move-to" aria-label="Move selected files to a folder">
+              <option value="" selected>Choose</option>
+            </select>
+          </label>
+          <button type="button" id="copy-selected" class="select-only" disabled>Copy links</button>
+        </div>
       </div>
+      <div class="filters" id="filters" hidden></div>
+      <div class="folder-grid" id="folders"></div>
       <div class="grid" id="grid"></div>
     </section>
+    <div id="menu" class="menu" hidden></div>
   </main>
 
   <script src="config.js"></script>

@@ -23,10 +23,13 @@ const newFolderForm = document.querySelector("#new-folder");
 const newFolderOpen = document.querySelector("#new-folder-open");
 const newFolderName = document.querySelector("#new-folder-name");
 const newFolderSave = document.querySelector("#new-folder-save");
+const folderBack = document.querySelector("#folder-back");
+const libraryTitle = document.querySelector("#library-title");
+const sortSelect = document.querySelector("#sort-mode");
+const filterToggle = document.querySelector("#filter-toggle");
+const moveTo = document.querySelector("#move-to");
+const menu = document.querySelector("#menu");
 
-const sortNew = document.querySelector("#sort-new");
-const sortName = document.querySelector("#sort-name");
-const sortType = document.querySelector("#sort-type");
 const libraryEl = document.querySelector(".library");
 const selectMode = document.querySelector("#select-mode");
 const selectShown = document.querySelector("#select-shown");
@@ -36,9 +39,10 @@ const filtersEl = document.querySelector("#filters");
 let library = [];
 let queue = [];
 let publishing = false;
-let folderFilter = null;
+let currentFolder = null;
 let sortMode = "new";
 let selecting = false;
+let filtersOpen = false;
 let modelFilter = "";
 let typeFilter = "";
 let languageFilter = "";
@@ -180,35 +184,63 @@ function fileMeta(name) {
   return { model, type, language };
 }
 
-function renderLibrary() {
-  const shown = visibleFiles();
-  const folders = [...new Set([
+function folderNames() {
+  return [...new Set([
     ...library.map((file) => file.folder).filter(Boolean),
     ...extraFolders,
   ])].sort((a, b) => a.localeCompare(b));
-  foldersEl.innerHTML = folders.length ? [
-    { id: "all", label: "All" },
-    { id: "root", label: "No folder" },
-    ...folders.map((folder) => ({ id: folder, label: folder })),
-  ].map((item) => `<button type="button" data-folder="${escapeAttr(item.id)}" class="${(item.id === "all" && folderFilter === null) || item.id === folderFilter || (item.id === "root" && folderFilter === "") ? "on" : ""}">${escapeHtml(item.label)}</button>`).join("") : "";
+}
+
+function renderLibrary() {
+  const shown = visibleFiles();
+  const query = search.value.trim().toLowerCase();
+  const folders = currentFolder === null
+    ? folderNames().filter((name) => !query || name.toLowerCase().includes(query))
+    : [];
+  foldersEl.innerHTML = folders.map((name) => {
+    const count = library.filter((file) => file.folder === name).length;
+    return `<button type="button" class="folder-card" data-open="${escapeAttr(name)}" data-drop-folder="${escapeAttr(name)}">
+      <span class="folder-glyph" aria-hidden="true"></span>
+      <span class="folder-card-name">${escapeHtml(name)}</span>
+      <span class="folder-card-count">${count} file${count === 1 ? "" : "s"}</span>
+    </button>`;
+  }).join("");
+  foldersEl.hidden = folders.length === 0;
+  folderBack.hidden = currentFolder === null;
+  libraryTitle.textContent = currentFolder || "Library";
+  filtersEl.hidden = !filtersOpen;
   filtersEl.innerHTML = [
     filterField("Model", unique("model"), modelFilter, "model"),
     filterField("Type", unique("type"), typeFilter, "type"),
     filterField("Language", unique("language"), languageFilter, "language"),
   ].join("");
+  filterToggle.classList.toggle("on", filtersOpen || Boolean(modelFilter || typeFilter || languageFilter));
+  filterToggle.textContent = modelFilter || typeFilter || languageFilter ? "Filter on" : "Filter";
   libraryEl.classList.toggle("selecting", selecting);
   selectMode.textContent = selecting ? "Done" : "Select";
   selectMode.classList.toggle("on", selecting);
-  sortNew.classList.toggle("on", sortMode === "new");
-  sortName.classList.toggle("on", sortMode === "name");
-  sortType.classList.toggle("on", sortMode === "type");
+  sortSelect.value = sortMode;
+  moveTo.innerHTML = [
+    `<option value="">Choose</option>`,
+    ...folderNames().map((name) => `<option value="${escapeAttr(name)}">${escapeHtml(name)}</option>`),
+    `<option value="__root">No folder</option>`,
+  ].join("");
   copySelected.disabled = selected.size === 0;
   copySelected.textContent = selected.size ? `Copy ${selected.size} links` : "Copy links";
   selectShown.textContent = shown.length && shown.every((file) => selected.has(file.path)) ? "Clear shown" : "Select shown";
-  countEl.textContent = `${shown.length} of ${library.length} file${library.length === 1 ? "" : "s"}`;
+  const folderCount = currentFolder === null ? folderNames().length : 0;
+  const fileLabel = `${shown.length} file${shown.length === 1 ? "" : "s"}`;
+  countEl.textContent = folderCount ? `${folderCount} folder${folderCount === 1 ? "" : "s"} · ${fileLabel}` : fileLabel;
   if (!shown.length) {
     pdfThumbRun += 1;
-    grid.innerHTML = `<p class="empty">${library.length ? "Nothing matches." : "No files yet. Add one on the left."}</p>`;
+    const message = !library.length
+      ? "No files yet. Add one on the left."
+      : currentFolder
+        ? "This folder is empty."
+        : query
+          ? "Nothing matches."
+          : "";
+    grid.innerHTML = message ? `<p class="empty">${message}</p>` : "";
     return;
   }
   grid.innerHTML = shown.map((file) => {
@@ -222,7 +254,7 @@ function renderLibrary() {
         ${fileThumb(file.name, previewUrl(file.path, file.sha))}
       </div>
       <div class="card-body">
-        ${file.folder ? `<p class="folder-label">${escapeHtml(file.folder)}</p>` : ""}
+        ${file.folder && currentFolder === null ? `<p class="folder-label">${escapeHtml(file.folder)}</p>` : ""}
         <h3 title="${escapeAttr(file.name)}">${escapeHtml(file.name)}</h3>
         <div class="card-actions">
           <button class="copy" type="button" data-copy="${escapeAttr(link)}" title="${escapeAttr(link)}">Copy link</button>
@@ -241,10 +273,12 @@ function renderLibrary() {
 
 function visibleFiles() {
   const query = search.value.trim().toLowerCase();
+  const searchingEverywhere = currentFolder === null && query.length > 0;
   const shown = library.filter((file) => {
-    const nameMatch = file.name.toLowerCase().includes(query) || file.folder.toLowerCase().includes(query) || file.model.toLowerCase().includes(query);
+    const inView = searchingEverywhere || (currentFolder === null ? file.folder === "" : file.folder === currentFolder);
+    if (!inView) return false;
+    const nameMatch = !query || file.name.toLowerCase().includes(query) || file.folder.toLowerCase().includes(query) || file.model.toLowerCase().includes(query);
     if (!nameMatch) return false;
-    if (folderFilter !== null && file.folder !== folderFilter) return false;
     if (modelFilter && file.model !== modelFilter) return false;
     if (typeFilter && file.type !== typeFilter) return false;
     if (languageFilter && file.language !== languageFilter) return false;
@@ -609,9 +643,22 @@ grid.addEventListener("change", (event) => {
   selectShown.textContent = shown.length && shown.every((file) => selected.has(file.path)) ? "Clear shown" : "Select shown";
 });
 
-sortNew.addEventListener("click", () => { sortMode = "new"; renderLibrary(); });
-sortName.addEventListener("click", () => { sortMode = "name"; renderLibrary(); });
-sortType.addEventListener("click", () => { sortMode = "type"; renderLibrary(); });
+sortSelect.addEventListener("change", () => { sortMode = sortSelect.value; renderLibrary(); });
+filterToggle.addEventListener("click", () => { filtersOpen = !filtersOpen; renderLibrary(); });
+folderBack.addEventListener("click", () => { currentFolder = null; renderLibrary(); });
+moveTo.addEventListener("change", async () => {
+  const dest = moveTo.value;
+  if (!dest) return;
+  const folder = dest === "__root" ? "" : dest;
+  const paths = [...selected];
+  moveTo.value = "";
+  if (!paths.length) return;
+  try {
+    await moveFiles(paths, folder);
+  } catch (error) {
+    statusEl.textContent = error.message;
+  }
+});
 
 let dragGhostEl = null;
 
@@ -672,13 +719,13 @@ grid.addEventListener("dragstart", (event) => {
 grid.addEventListener("dragend", clearDrag);
 
 foldersEl.addEventListener("dragover", (event) => {
-  const button = event.target.closest("[data-folder]");
-  if (!button || button.dataset.folder === "all") return;
+  const button = event.target.closest("[data-drop-folder]");
+  if (!button) return;
   event.preventDefault();
   button.classList.add("hot");
 });
 foldersEl.addEventListener("dragleave", (event) => {
-  const button = event.target.closest("[data-folder]");
+  const button = event.target.closest("[data-drop-folder]");
   if (button) button.classList.remove("hot");
 });
 async function moveFiles(paths, folder) {
@@ -706,11 +753,11 @@ function showNewFolder(open) {
 }
 
 foldersEl.addEventListener("drop", async (event) => {
-  const button = event.target.closest("[data-folder]");
-  if (!button || button.dataset.folder === "all") return;
+  const button = event.target.closest("[data-drop-folder]");
+  if (!button) return;
   event.preventDefault();
   button.classList.remove("hot");
-  const folder = button.dataset.folder === "root" ? "" : button.dataset.folder;
+  const folder = button.dataset.dropFolder;
   if (event.dataTransfer.files && event.dataTransfer.files.length) {
     folderInput.value = folder;
     addFiles(event.dataTransfer.files);
@@ -773,6 +820,7 @@ newFolderForm.addEventListener("submit", async (event) => {
   extraFolders.add(name);
   sessionStorage.setItem("deliver-folders", JSON.stringify([...extraFolders]));
   folderInput.value = name;
+  currentFolder = name;
   renderQueue();
   newFolderName.value = "";
   showNewFolder(false);
@@ -790,10 +838,82 @@ newFolderForm.addEventListener("submit", async (event) => {
   }
 });
 foldersEl.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-folder]");
+  const button = event.target.closest("[data-open]");
   if (!button) return;
-  folderFilter = button.dataset.folder === "all" ? null : button.dataset.folder === "root" ? "" : button.dataset.folder;
+  currentFolder = button.dataset.open;
   renderLibrary();
 });
+
+function closeMenu() {
+  menu.hidden = true;
+  menu.innerHTML = "";
+}
+
+function openMenu(event, card) {
+  const path = card.dataset.name;
+  const paths = selected.has(path) && selected.size > 1 ? [...selected] : [path];
+  const destinations = folderNames().filter((name) => paths.some((item) => folderOf(item) !== name));
+  menu.innerHTML = [
+    `<button type="button" data-act="open">Open</button>`,
+    `<button type="button" data-act="copy">Copy link</button>`,
+    `<p class="menu-label">Move to</p>`,
+    ...destinations.map((name) => `<button type="button" data-act="move" data-dest="${escapeAttr(name)}">${escapeHtml(name)}</button>`),
+    paths.some((item) => folderOf(item)) ? `<button type="button" data-act="move" data-dest="">Library</button>` : "",
+    `<button type="button" data-act="rename">Rename</button>`,
+    `<button type="button" data-act="remove">Remove</button>`,
+  ].join("");
+  menu.dataset.paths = JSON.stringify(paths);
+  menu.hidden = false;
+  const width = 220;
+  const left = Math.max(8, Math.min(event.clientX, window.innerWidth - width - 8));
+  const top = Math.max(8, Math.min(event.clientY, window.innerHeight - 12));
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+  const overflow = menu.getBoundingClientRect().bottom - window.innerHeight;
+  if (overflow > 0) menu.style.top = `${Math.max(8, top - overflow - 8)}px`;
+}
+
+grid.addEventListener("contextmenu", (event) => {
+  const card = event.target.closest(".card");
+  if (!card) return;
+  event.preventDefault();
+  openMenu(event, card);
+});
+
+menu.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-act]");
+  if (!button) return;
+  const paths = JSON.parse(menu.dataset.paths || "[]");
+  const path = paths[0];
+  const action = button.dataset.act;
+  if (action === "move") {
+    const dest = button.dataset.dest;
+    closeMenu();
+    try {
+      await moveFiles(paths, dest);
+    } catch (error) {
+      statusEl.textContent = error.message;
+    }
+    return;
+  }
+  closeMenu();
+  const card = grid.querySelector(`.card[data-name="${CSS.escape(path)}"]`);
+  if (action === "open") window.open(cdnUrl(path), "_blank", "noopener");
+  if (action === "copy") {
+    const ok = await copyText(paths.map((item) => cdnUrl(item)).join("\n"));
+    statusEl.textContent = ok ? "Copied." : "Copy failed.";
+  }
+  if (action === "rename") card?.querySelector("[data-rename]")?.click();
+  if (action === "remove") card?.querySelector("[data-remove]")?.click();
+});
+
+document.addEventListener("click", (event) => {
+  if (!menu.hidden && !menu.contains(event.target)) closeMenu();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeMenu();
+});
+window.addEventListener("scroll", closeMenu, true);
+
 search.addEventListener("input", renderLibrary);
 loadLibrary();
