@@ -21,7 +21,9 @@ async function loadFiles() {
   const cachedText = await bucket.get("index", { type: "text" }).catch(() => null);
   if (cachedText) {
     const cached = JSON.parse(cachedText);
-    if (Date.now() - cached.at < 60_000) return cached.files;
+    if (Date.now() - cached.at < 60_000 && Array.isArray(cached.files)) {
+      return { files: cached.files, brands: cached.brands || ["Hyundai", "Geely"] };
+    }
   }
 
   const tree = await gh(`/repos/${OWNER}/${REPO}/git/trees/${encodeURIComponent(BRANCH)}?recursive=1`);
@@ -31,13 +33,34 @@ async function loadFiles() {
 
   const dates = await fileDates();
   for (const file of files) file.date = dates[file.path] || "";
+  const brands = await readBrands(tree.tree || []);
 
-  await bucket.set("index", JSON.stringify({ at: Date.now(), files })).catch(() => {});
-  return files;
+  await bucket.set("index", JSON.stringify({ at: Date.now(), files, brands })).catch(() => {});
+  return { files, brands };
+}
+
+async function readBrands(entries) {
+  const entry = entries.find((item) => item.path === "brands.json");
+  if (!entry) return ["Hyundai", "Geely"];
+  try {
+    const blob = await gh(`/repos/${OWNER}/${REPO}/git/blobs/${entry.sha}`);
+    const parsed = JSON.parse(Buffer.from(blob.content, "base64").toString("utf8"));
+    const names = [];
+    for (const item of Array.isArray(parsed.brands) ? parsed.brands : []) {
+      if (typeof item !== "string") continue;
+      const name = item.trim();
+      if (!name || names.some((brand) => brand.toLowerCase() === name.toLowerCase())) continue;
+      names.push(name);
+    }
+    if (!names.some((brand) => brand.toLowerCase() === "hyundai")) names.unshift("Hyundai");
+    return names.length ? names : ["Hyundai", "Geely"];
+  } catch {
+    return ["Hyundai", "Geely"];
+  }
 }
 
 function allowed(path) {
-  if (/^(site|netlify|scripts)\//.test(path) || path === "redirects.json") return false;
+  if (/^(site|netlify|scripts)\//.test(path) || path === "redirects.json" || path === "brands.json") return false;
   const ext = path.includes(".") ? path.slice(path.lastIndexOf(".") + 1).toLowerCase() : "";
   return ALLOWED.has(ext);
 }

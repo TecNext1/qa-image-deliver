@@ -31,7 +31,7 @@
         <span class="drop-sub">or choose files</span>
       </label>
       <label class="password-row" for="folder">Folder</label>
-      <input id="folder" type="text" placeholder="Optional. Blank keeps the current links" autocomplete="off">
+      <input id="folder" type="text" placeholder="Optional. Inside this brand" autocomplete="off">
       <ul class="queue" id="queue"></ul>
       <label class="password-row" for="password">Team password</label>
       <input id="password" type="password" autocomplete="current-password" placeholder="Asked once, kept in this browser">
@@ -42,6 +42,13 @@
     </section>
 
     <section class="panel library">
+      <div class="brand-bar">
+        <div class="brands" id="brands"></div>
+        <form class="brand-add" id="brand-add" hidden>
+          <input id="brand-name" type="text" placeholder="Brand name" autocomplete="off" maxlength="40">
+          <button type="submit">Add</button>
+        </form>
+      </div>
       <div class="panel-head library-head">
         <div>
           <button type="button" id="folder-back" class="back" hidden>Library</button>

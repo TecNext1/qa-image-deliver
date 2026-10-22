@@ -29,6 +29,9 @@ const sortSelect = document.querySelector("#sort-mode");
 const filterToggle = document.querySelector("#filter-toggle");
 const moveTo = document.querySelector("#move-to");
 const menu = document.querySelector("#menu");
+const brandsEl = document.querySelector("#brands");
+const brandAdd = document.querySelector("#brand-add");
+const brandName = document.querySelector("#brand-name");
 
 const libraryEl = document.querySelector(".library");
 const selectMode = document.querySelector("#select-mode");
@@ -47,9 +50,20 @@ let modelFilter = "";
 let typeFilter = "";
 let languageFilter = "";
 const selected = new Set();
-const extraFolders = new Set(JSON.parse(sessionStorage.getItem("deliver-folders") || "[]"));
+let brands = ["Hyundai", "Geely"];
+let currentBrand = sessionStorage.getItem("deliver-brand") || "Hyundai";
+let extraFolders = loadExtraFolders();
 
-uploadNote.textContent = "Leave the folder blank and existing links stay the same.";
+function loadExtraFolders() {
+  try {
+    const raw = JSON.parse(sessionStorage.getItem("deliver-folders") || "{}");
+    if (Array.isArray(raw)) return { Hyundai: raw };
+    if (raw && typeof raw === "object") return raw;
+  } catch { /* keep a fresh list */ }
+  return {};
+}
+
+uploadNote.textContent = "Publishing on Hyundai. Leave the folder blank and existing links stay the same.";
 passwordInput.value = sessionStorage.getItem("deliver-password") || "";
 passwordInput.addEventListener("change", () => {
   sessionStorage.setItem("deliver-password", passwordInput.value);
@@ -83,6 +97,40 @@ function folderOf(path) {
   return slash === -1 ? "" : path.slice(0, slash);
 }
 
+function setBrands(list) {
+  const next = [];
+  for (const item of list || []) {
+    if (typeof item !== "string") continue;
+    const name = item.trim();
+    if (!name || next.some((brand) => brand.toLowerCase() === name.toLowerCase())) continue;
+    next.push(name);
+  }
+  if (!next.some((brand) => brand.toLowerCase() === "hyundai")) next.unshift("Hyundai");
+  brands = next.length ? next : ["Hyundai", "Geely"];
+  if (!brands.includes(currentBrand)) currentBrand = "Hyundai";
+}
+
+function placeOf(path) {
+  const parts = String(path || "").split("/").filter(Boolean);
+  const branded = parts.length >= 2 && brands.some((brand) => brand !== "Hyundai" && brand === parts[0]);
+  if (branded) {
+    return { brand: parts[0], folder: parts.length > 2 ? parts.slice(1, -1).join("/") : "", name: parts[parts.length - 1] };
+  }
+  if (parts.length >= 2) return { brand: "Hyundai", folder: parts.slice(0, -1).join("/"), name: parts[parts.length - 1] };
+  return { brand: "Hyundai", folder: "", name: parts[0] || path };
+}
+
+function pathFor(brand, folder, filename) {
+  if (!brand || brand === "Hyundai") return folder ? `${folder}/${filename}` : filename;
+  return folder ? `${brand}/${folder}/${filename}` : `${brand}/${filename}`;
+}
+
+function syncUploadNote() {
+  uploadNote.textContent = currentBrand === "Hyundai"
+    ? "Publishing on Hyundai. Leave the folder blank and existing links stay the same."
+    : `Publishing on ${currentBrand}. The link will start with /${currentBrand}/.`;
+}
+
 function cleanFolder(value) {
   const folder = (value || "").trim().replace(/^\/+|\/+$/g, "");
   if (!folder) return "";
@@ -91,6 +139,9 @@ function cleanFolder(value) {
   }
   if (["site", "netlify", "scripts", ".github"].includes(folder.toLowerCase())) {
     throw new Error("Pick another folder name.");
+  }
+  if (brands.some((brand) => brand.toLowerCase() === folder.toLowerCase())) {
+    throw new Error("That name is a brand. Pick another folder.");
   }
   return folder;
 }
@@ -139,32 +190,49 @@ function bytesToBase64(bytes) {
   return btoa(binary);
 }
 
+async function loadBrandFile() {
+  try {
+    const response = await fetch(`https://raw.githubusercontent.com/${CFG.owner}/${CFG.repo}/${CFG.branch}/brands.json`, { cache: "no-store" });
+    if (!response.ok) return;
+    const data = await response.json();
+    if (Array.isArray(data.brands)) setBrands(data.brands);
+  } catch { /* the built-in Hyundai and Geely tabs stay */ }
+}
+
 async function loadLibrary() {
   grid.innerHTML = `<p class="empty">Loading files…</p>`;
   try {
     const response = await fetch("/api/library", { cache: "no-store" });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Could not load the library.");
-    library = data.map(decorate);
+    if (Array.isArray(data)) {
+      await loadBrandFile();
+      library = data.map(decorate);
+    } else {
+      setBrands(data.brands);
+      library = (data.files || []).map(decorate);
+    }
   } catch {
     try {
+      await loadBrandFile();
       const tree = await gh(`/repos/${CFG.owner}/${CFG.repo}/git/trees/${encodeURIComponent(CFG.branch)}?recursive=1`);
       library = (tree.tree || [])
-        .filter((entry) => entry.type === "blob" && ALLOWED.includes(extOf(entry.path)) && !/^(site|netlify|scripts)\//.test(entry.path) && entry.path !== "redirects.json")
+        .filter((entry) => entry.type === "blob" && ALLOWED.includes(extOf(entry.path)) && !/^(site|netlify|scripts)\//.test(entry.path) && entry.path !== "redirects.json" && entry.path !== "brands.json")
         .map((entry) => decorate({ ...entry, date: "" }));
     } catch (error) {
       library = [];
+      renderBrands();
       grid.innerHTML = `<p class="empty">Could not load the library. ${error.message}</p>`;
       return;
     }
   }
   renderLibrary();
+  renderQueue();
 }
 
 function decorate(entry) {
-  const name = baseName(entry.path);
-  const folder = folderOf(entry.path);
-  return { ...entry, name, folder, ...fileMeta(name) };
+  const place = placeOf(entry.path);
+  return { ...entry, name: place.name, folder: place.folder, brand: place.brand, ...fileMeta(place.name) };
 }
 
 function fileMeta(name) {
@@ -184,21 +252,50 @@ function fileMeta(name) {
   return { model, type, language };
 }
 
+function extraList(brand = currentBrand) {
+  const list = extraFolders[brand];
+  return Array.isArray(list) ? list : [];
+}
+
+function rememberFolders() {
+  sessionStorage.setItem("deliver-folders", JSON.stringify(extraFolders));
+}
+
+function addExtra(name, brand = currentBrand) {
+  extraFolders[brand] = [...new Set([...extraList(brand), name])];
+  rememberFolders();
+}
+
+function removeExtra(name, brand = currentBrand) {
+  extraFolders[brand] = extraList(brand).filter((item) => item !== name);
+  rememberFolders();
+}
+
 function folderNames() {
   return [...new Set([
-    ...library.map((file) => file.folder).filter(Boolean),
-    ...extraFolders,
+    ...library.filter((file) => file.brand === currentBrand).map((file) => file.folder).filter(Boolean),
+    ...extraList(),
   ])].sort((a, b) => a.localeCompare(b));
 }
 
+function renderBrands() {
+  brandsEl.innerHTML = [
+    ...brands.map((name) => `<button type="button" class="brand${name === currentBrand ? " on" : ""}" data-brand="${escapeAttr(name)}">${escapeHtml(name)}</button>`),
+    `<button type="button" class="brand add" data-add-brand>+</button>`,
+  ].join("");
+  syncUploadNote();
+  folderBack.textContent = currentBrand;
+}
+
 function renderLibrary() {
+  renderBrands();
   const shown = visibleFiles();
   const query = search.value.trim().toLowerCase();
   const folders = currentFolder === null
     ? folderNames().filter((name) => !query || name.toLowerCase().includes(query))
     : [];
   foldersEl.innerHTML = folders.map((name) => {
-    const count = library.filter((file) => file.folder === name).length;
+    const count = library.filter((file) => file.brand === currentBrand && file.folder === name).length;
     return `<div class="folder-card" role="button" tabindex="0" data-open="${escapeAttr(name)}" data-drop-folder="${escapeAttr(name)}">
       <span class="folder-glyph" aria-hidden="true"></span>
       <span class="folder-card-name">${escapeHtml(name)}</span>
@@ -207,7 +304,7 @@ function renderLibrary() {
   }).join("");
   foldersEl.hidden = folders.length === 0;
   folderBack.hidden = currentFolder === null;
-  libraryTitle.textContent = currentFolder || "Library";
+  libraryTitle.textContent = currentFolder || currentBrand;
   filtersEl.hidden = !filtersOpen;
   filtersEl.innerHTML = [
     filterField("Model", unique("model"), modelFilter, "model"),
@@ -233,13 +330,14 @@ function renderLibrary() {
   countEl.textContent = folderCount ? `${folderCount} folder${folderCount === 1 ? "" : "s"} · ${fileLabel}` : fileLabel;
   if (!shown.length) {
     pdfThumbRun += 1;
-    const message = !library.length
-      ? "No files yet. Add one on the left."
-      : currentFolder
-        ? "This folder is empty."
-        : query
-          ? "Nothing matches."
-          : "";
+    const inBrand = library.some((file) => file.brand === currentBrand);
+    const message = currentFolder
+      ? "This folder is empty."
+      : query
+        ? "Nothing matches."
+        : inBrand
+          ? ""
+          : `No ${currentBrand} files yet. Publish while this tab is open.`;
     grid.innerHTML = message ? `<p class="empty">${message}</p>` : "";
     return;
   }
@@ -275,6 +373,7 @@ function visibleFiles() {
   const query = search.value.trim().toLowerCase();
   const searchingEverywhere = currentFolder === null && query.length > 0;
   const shown = library.filter((file) => {
+    if (file.brand !== currentBrand) return false;
     const inView = searchingEverywhere || (currentFolder === null ? file.folder === "" : file.folder === currentFolder);
     if (!inView) return false;
     const nameMatch = !query || file.name.toLowerCase().includes(query) || file.folder.toLowerCase().includes(query) || file.model.toLowerCase().includes(query);
@@ -296,7 +395,7 @@ function visibleFiles() {
 }
 
 function unique(key) {
-  return [...new Set(library.map((file) => file[key]).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  return [...new Set(library.filter((file) => file.brand === currentBrand).map((file) => file[key]).filter(Boolean))].sort((a, b) => a.localeCompare(b));
 }
 
 function filterField(label, values, current, kind) {
@@ -353,7 +452,7 @@ function renderQueue() {
 
 function publishPath(filename) {
   const folder = cleanFolder(folderInput.value);
-  return folder ? `${folder}/${filename}` : filename;
+  return pathFor(currentBrand, folder, filename);
 }
 
 function fileThumb(name, src) {
@@ -569,9 +668,8 @@ grid.addEventListener("click", async (event) => {
       statusEl.textContent = "Enter the team password.";
       return;
     }
-    const next = folderOf(rename.dataset.rename)
-      ? `${folderOf(rename.dataset.rename)}/${targetName(baseName(rename.dataset.rename), input.value)}`
-      : targetName(baseName(rename.dataset.rename), input.value);
+    const current = placeOf(rename.dataset.rename);
+    const next = pathFor(current.brand, current.folder, targetName(current.name, input.value));
     statusEl.textContent = `Renaming ${baseName(rename.dataset.rename)}…`;
     try {
       await api({ action: "rename", from: rename.dataset.rename, to: next });
@@ -735,7 +833,8 @@ async function moveFiles(paths, folder) {
   }
   statusEl.textContent = "Moving…";
   for (const path of paths) {
-    const next = folder ? `${folder}/${baseName(path)}` : baseName(path);
+    const current = placeOf(path);
+    const next = pathFor(current.brand, folder, current.name);
     if (next === path) continue;
     await api({ action: "rename", from: path, to: next });
     selected.delete(path);
@@ -817,8 +916,7 @@ newFolderForm.addEventListener("submit", async (event) => {
     statusEl.textContent = "Type a folder name.";
     return;
   }
-  extraFolders.add(name);
-  sessionStorage.setItem("deliver-folders", JSON.stringify([...extraFolders]));
+  addExtra(name);
   folderInput.value = name;
   currentFolder = name;
   renderQueue();
@@ -854,12 +952,8 @@ foldersEl.addEventListener("keydown", (event) => {
   renderLibrary();
 });
 
-function rememberFolders() {
-  sessionStorage.setItem("deliver-folders", JSON.stringify([...extraFolders]));
-}
-
 function filesInFolder(name) {
-  return library.filter((file) => file.folder === name);
+  return library.filter((file) => file.brand === currentBrand && file.folder === name);
 }
 
 let folderRenameLock = false;
@@ -921,9 +1015,8 @@ async function renameFolder(from, typed) {
     return;
   }
   const paths = filesInFolder(from).map((file) => file.path);
-  extraFolders.delete(from);
-  extraFolders.add(to);
-  rememberFolders();
+  removeExtra(from);
+  addExtra(to);
   if (currentFolder === from) currentFolder = to;
   if (folderInput.value === from) folderInput.value = to;
   if (!paths.length) {
@@ -932,9 +1025,8 @@ async function renameFolder(from, typed) {
     return;
   }
   if (!passwordInput.value) {
-    extraFolders.delete(to);
-    extraFolders.add(from);
-    rememberFolders();
+    removeExtra(to);
+    addExtra(from);
     if (currentFolder === to) currentFolder = from;
     if (folderInput.value === to) folderInput.value = from;
     statusEl.textContent = "Enter the team password.";
@@ -949,9 +1041,8 @@ async function renameFolder(from, typed) {
     statusEl.textContent = error.message;
     await loadLibrary();
     if (!filesInFolder(to).length) {
-      extraFolders.delete(to);
-      extraFolders.add(from);
-      rememberFolders();
+      removeExtra(to);
+      addExtra(from);
       if (currentFolder === to) currentFolder = from;
       if (folderInput.value === to) folderInput.value = from;
       renderLibrary();
@@ -962,8 +1053,7 @@ async function renameFolder(from, typed) {
 async function deleteFolder(name) {
   const paths = filesInFolder(name).map((file) => file.path);
   if (!paths.length) {
-    extraFolders.delete(name);
-    rememberFolders();
+    removeExtra(name);
     if (currentFolder === name) currentFolder = null;
     if (folderInput.value === name) folderInput.value = "";
     statusEl.textContent = `Removed ${name}.`;
@@ -977,8 +1067,7 @@ async function deleteFolder(name) {
   statusEl.textContent = `Removing ${name}…`;
   try {
     for (const path of paths) await api({ action: "delete", path });
-    extraFolders.delete(name);
-    rememberFolders();
+    removeExtra(name);
     if (currentFolder === name) currentFolder = null;
     if (folderInput.value === name) folderInput.value = "";
     statusEl.textContent = `Removed ${name} and ${paths.length} file${paths.length === 1 ? "" : "s"}.`;
@@ -1034,24 +1123,45 @@ function fillMenu(title, meta, sections) {
   ].join("");
 }
 
+async function moveFilesToBrand(paths, brand) {
+  if (!passwordInput.value) {
+    statusEl.textContent = "Enter the team password.";
+    return;
+  }
+  statusEl.textContent = "Moving…";
+  for (const path of paths) {
+    const current = placeOf(path);
+    if (current.brand === brand) continue;
+    const folder = current.folder && current.folder.toLowerCase() !== brand.toLowerCase() ? current.folder : "";
+    const next = pathFor(brand, folder, current.name);
+    if (next === path) continue;
+    await api({ action: "rename", from: path, to: next });
+    selected.delete(path);
+  }
+  statusEl.textContent = "Moved. The old link still opens the file.";
+  await loadLibrary();
+}
+
 function openFileMenu(event, card) {
   const path = card.dataset.name;
   const paths = selected.has(path) && selected.size > 1 ? [...selected] : [path];
-  const destinations = folderNames().filter((name) => paths.some((item) => folderOf(item) !== name));
-  const canLeave = paths.some((item) => folderOf(item));
+  const destinations = folderNames().filter((name) => paths.some((item) => placeOf(item).folder !== name));
+  const canLeave = paths.some((item) => placeOf(item).folder);
   const moveItems = [
     ...destinations.map((name) => `<button type="button" data-act="move" data-dest="${escapeAttr(name)}">${escapeHtml(name)}</button>`),
-    canLeave ? `<button type="button" data-act="move" data-dest="">Library</button>` : "",
+    canLeave ? `<button type="button" data-act="move" data-dest="">${escapeHtml(currentBrand)}</button>` : "",
   ].filter(Boolean);
+  const otherBrands = brands.filter((brand) => paths.some((item) => placeOf(item).brand !== brand));
   const many = paths.length > 1;
   fillMenu(
     many ? `${paths.length} files` : baseName(path),
-    many ? "Actions apply to the selection" : (folderOf(path) || "Library"),
+    many ? "Actions apply to the selection" : (placeOf(path).folder || currentBrand),
     [
       [
         many ? "" : `<button type="button" data-act="open">Open</button>`,
         `<button type="button" data-act="copy">${many ? "Copy links" : "Copy link"}</button>`,
       ].join(""),
+      otherBrands.length ? `<p class="menu-label">Brand</p>${otherBrands.map((brand) => `<button type="button" data-act="brand" data-dest="${escapeAttr(brand)}">${escapeHtml(brand)}</button>`).join("")}` : "",
       moveItems.length ? `<p class="menu-label">Move to</p>${moveItems.join("")}` : "",
       [
         many ? "" : `<button type="button" data-act="rename">Rename</button>`,
@@ -1126,11 +1236,12 @@ menu.addEventListener("click", async (event) => {
   const paths = JSON.parse(menu.dataset.paths || "[]");
   const path = paths[0];
   const action = button.dataset.act;
-  if (action === "move") {
+  if (action === "move" || action === "brand") {
     const dest = button.dataset.dest;
     closeMenu();
     try {
-      await moveFiles(paths, dest);
+      if (action === "brand") await moveFilesToBrand(paths, dest);
+      else await moveFiles(paths, dest);
     } catch (error) {
       statusEl.textContent = error.message;
     }
@@ -1166,4 +1277,53 @@ document.addEventListener("keydown", (event) => {
 window.addEventListener("scroll", closeMenu, true);
 
 search.addEventListener("input", renderLibrary);
+brandsEl.addEventListener("click", (event) => {
+  if (event.target.closest("[data-add-brand]")) {
+    brandAdd.hidden = false;
+    brandName.focus();
+    return;
+  }
+  const button = event.target.closest("[data-brand]");
+  if (!button || button.dataset.brand === currentBrand) {
+    if (button) {
+      currentFolder = null;
+      renderLibrary();
+    }
+    return;
+  }
+  currentBrand = button.dataset.brand;
+  sessionStorage.setItem("deliver-brand", currentBrand);
+  currentFolder = null;
+  selected.clear();
+  closeMenu();
+  renderLibrary();
+  renderQueue();
+});
+brandAdd.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const name = brandName.value.trim();
+  if (!name) {
+    statusEl.textContent = "Type a brand name.";
+    return;
+  }
+  if (!passwordInput.value) {
+    statusEl.textContent = "Enter the team password.";
+    return;
+  }
+  try {
+    const data = await api({ action: "add-brand", name });
+    setBrands(data.brands);
+    currentBrand = (data.brands || []).find((brand) => brand.toLowerCase() === name.toLowerCase()) || name;
+    sessionStorage.setItem("deliver-brand", currentBrand);
+    currentFolder = null;
+    brandName.value = "";
+    brandAdd.hidden = true;
+    statusEl.textContent = `${currentBrand} is ready. Publish while this tab is open.`;
+    renderLibrary();
+    renderQueue();
+  } catch (error) {
+    statusEl.textContent = error.message;
+  }
+});
+renderBrands();
 loadLibrary();

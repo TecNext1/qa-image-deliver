@@ -96,6 +96,39 @@ main {
   line-height: 1.4;
 }
 
+.brand-bar { margin-bottom: 16px; }
+.brands { display: flex; flex-wrap: wrap; gap: 8px; }
+.brand {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.brand.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.brand.add { border-style: dashed; color: var(--muted); font-weight: 500; }
+.brand-add { display: flex; gap: 8px; margin-top: 8px; }
+.brand-add[hidden] { display: none; }
+.brand-add input {
+  width: 180px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0 10px;
+  background: #fff;
+}
+.brand-add button {
+  border: 0;
+  border-radius: 10px;
+  padding: 0 14px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .library-head {
   display: flex;
   justify-content: space-between;

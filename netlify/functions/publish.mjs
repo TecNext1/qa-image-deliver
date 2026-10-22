@@ -24,6 +24,7 @@ export default async (request) => {
     if (body.action === "finish") return json(200, await finish(body));
     if (body.action === "delete") return json(200, await remove(body.path));
     if (body.action === "rename") return json(200, await rename(body.from, body.to));
+    if (body.action === "add-brand") return json(200, await addBrand(body.name));
     return json(400, { error: "Unknown action." });
   } catch (error) {
     return json(400, { error: error.message || "Upload failed." });
@@ -62,7 +63,7 @@ async function saveChunk(body) {
 
 async function finish(body) {
   const id = uploadId(body.id);
-  const path = cleanName(body.path);
+  const path = cleanName(body.path, await loadBrands());
   const total = Number(body.total);
   if (!Number.isInteger(total) || total < 1 || total > 21) throw new Error("Upload was incomplete. Try again.");
 
@@ -89,14 +90,15 @@ async function clearChunks(id, total) {
 }
 
 async function remove(path) {
-  const name = cleanName(path);
+  const name = cleanName(path, await loadBrands());
   await commit([{ path: name, sha: null }], `Remove ${name}`);
   return { ok: true };
 }
 
 async function rename(from, to) {
-  const source = cleanName(from);
-  const target = cleanName(to);
+  const brands = await loadBrands();
+  const source = cleanName(from, brands);
+  const target = cleanName(to, brands);
   if (source === target) return { ok: true, path: target };
   const tree = await gh(`/repos/${OWNER}/${REPO}/git/trees/${encodeURIComponent(BRANCH)}?recursive=1`);
   const entries = tree.tree || [];
@@ -130,21 +132,76 @@ async function readRedirects(entries) {
   return parsed && typeof parsed === "object" ? parsed : {};
 }
 
-function cleanName(name) {
+const RESERVED = ["site", "netlify", "scripts", ".github"];
+
+function cleanName(name, brands) {
   if (typeof name !== "string" || !name || name.includes("\\") || name.includes("..")) {
     throw new Error("Use a plain filename.");
   }
   const parts = name.split("/").filter(Boolean);
-  if (parts.length < 1 || parts.length > 2 || parts.some((part) => part === "." || part === "..")) {
+  if (parts.length < 1 || parts.length > 3 || parts.some((part) => part === "." || part === "..")) {
     throw new Error("Use one folder, or none.");
   }
   const file = parts[parts.length - 1];
   const ext = file.includes(".") ? file.slice(file.lastIndexOf(".") + 1).toLowerCase() : "";
   if (!ALLOWED.has(ext) || BLOCKED.has(file.toLowerCase())) throw new Error("That file type is not allowed.");
-  if (parts.length === 2 && ["site", "netlify", "scripts", ".github"].includes(parts[0].toLowerCase())) {
-    throw new Error("Pick another folder name.");
+  if (RESERVED.includes(parts[0].toLowerCase())) throw new Error("Pick another folder name.");
+  if (parts.length === 3) {
+    const brand = (brands || []).find((item) => item === parts[0]);
+    if (!brand || brand.toLowerCase() === "hyundai") throw new Error("That brand is not available.");
+    if (RESERVED.includes(parts[1].toLowerCase())) throw new Error("Pick another folder name.");
   }
   return parts.join("/");
+}
+
+function cleanBrand(value) {
+  const name = typeof value === "string" ? value.trim().replace(/^\/+|\/+$/g, "") : "";
+  if (!name || name.length > 40 || /[\\/]/.test(name) || name.includes("..") || name === ".") {
+    throw new Error("Use a short brand name, with no slashes.");
+  }
+  if (RESERVED.includes(name.toLowerCase()) || name.toLowerCase() === "hyundai") {
+    throw new Error("Pick another brand name.");
+  }
+  return name;
+}
+
+function normalizeBrands(list) {
+  const names = [];
+  for (const item of Array.isArray(list) ? list : []) {
+    if (typeof item !== "string") continue;
+    const name = item.trim();
+    if (!name || names.some((brand) => brand.toLowerCase() === name.toLowerCase())) continue;
+    names.push(name);
+  }
+  if (!names.some((brand) => brand.toLowerCase() === "hyundai")) names.unshift("Hyundai");
+  return names.length ? names : ["Hyundai", "Geely"];
+}
+
+async function loadBrands() {
+  try {
+    const file = await gh(`/repos/${OWNER}/${REPO}/contents/brands.json?ref=${encodeURIComponent(BRANCH)}`);
+    const parsed = JSON.parse(Buffer.from(file.content, "base64").toString("utf8"));
+    return normalizeBrands(parsed.brands);
+  } catch {
+    return ["Hyundai", "Geely"];
+  }
+}
+
+async function addBrand(raw) {
+  const name = cleanBrand(raw);
+  const tree = await gh(`/repos/${OWNER}/${REPO}/git/trees/${encodeURIComponent(BRANCH)}?recursive=1`);
+  const entries = tree.tree || [];
+  const current = await loadBrands();
+  if (current.some((brand) => brand.toLowerCase() === name.toLowerCase())) return { ok: true, brands: current };
+  const taken = entries.some((entry) => entry.type === "blob" && entry.path.split("/")[0].toLowerCase() === name.toLowerCase());
+  if (taken) throw new Error("A folder already uses that name.");
+  const brands = [...current, name];
+  const blob = await gh(`/repos/${OWNER}/${REPO}/git/blobs`, {
+    method: "POST",
+    body: { content: Buffer.from(JSON.stringify({ brands }, null, 2) + "\n").toString("base64"), encoding: "base64" },
+  });
+  await commit([{ path: "brands.json", sha: blob.sha }], `Add brand ${name}`);
+  return { ok: true, brands };
 }
 
 async function commit(treeItems, message, attempt = 0) {
