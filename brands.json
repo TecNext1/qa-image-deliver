@@ -1,3 +1,7 @@
 {
-  "brands": ["Hyundai", "Geely"]
+  "brands": [
+    "Hyundai",
+    "Geely",
+    "Genesis"
+  ]
 }
